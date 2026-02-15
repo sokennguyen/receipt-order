@@ -1,0 +1,20 @@
+[project]
+name = "receipt-order-textual"
+version = "0.1.0"
+description = "A starter Textual terminal app"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "textual>=0.58,<1.0",
+]
+
+[project.scripts]
+receipt-order = "app.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
