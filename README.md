@@ -24,9 +24,11 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 ## Controls
 
-- `G`: switch to Gimbap mode
-- `R`: switch to Ramyun mode
-- Type letters/numbers: build search query
-- `Backspace`: delete one query character
-- `Tab` / `↑` / `↓`: cycle search results
-- `Enter`: register highlighted result into the left order panel
+- `R` / `G` (normal mode): enter Ramyun or Gimbap search mode
+- `T` (normal mode): add `Tteokbokki` directly to registered orders
+- Type letters/numbers (active mode): build search query
+- `Backspace` (active mode): delete one query character
+- `Tab` / `↑` / `↓` (active mode): cycle search results
+- `Enter` (active mode): register highlighted result into the left order panel
+- `Ctrl+C`: exit active mode back to normal mode (no-op in normal mode)
+- `Ctrl+Q`: quit app

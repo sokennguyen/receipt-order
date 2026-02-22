@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.events import Key
@@ -16,6 +17,14 @@ class MenuItem:
     """A searchable menu item."""
 
     name: str
+
+
+@dataclass(frozen=True)
+class OrderEntry:
+    """A registered order row."""
+
+    name: str
+    mode: str | None = None
 
 
 MENU_BY_MODE: dict[str, list[MenuItem]] = {
@@ -64,7 +73,7 @@ class ReceiptOrderApp(App):
     }
 
     #search-bar {
-        border: heavy $accent;
+        border: heavy $secondary;
         padding: 0 1;
         margin-bottom: 1;
         height: 3;
@@ -81,19 +90,6 @@ class ReceiptOrderApp(App):
         margin-bottom: 1;
     }
 
-    .badge-r {
-        background: $error;
-        color: $text;
-        padding: 0 1;
-        text-style: bold;
-    }
-
-    .badge-g {
-        background: $success;
-        color: $text;
-        padding: 0 1;
-        text-style: bold;
-    }
     """
 
     input_state = reactive("normal")
@@ -113,7 +109,7 @@ class ReceiptOrderApp(App):
 
     def __init__(self) -> None:
         super().__init__()
-        self.registered_orders: list[str] = []
+        self.registered_orders: list[OrderEntry] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -134,6 +130,11 @@ class ReceiptOrderApp(App):
 
         key = event.character.lower()
         if self.input_state == "normal":
+            if key == "t":
+                self.registered_orders.append(OrderEntry(name="Tteokbokki"))
+                self._refresh_orders()
+                event.stop()
+                return
             if key not in {"g", "r"}:
                 return
             self.mode = key.upper()
@@ -178,7 +179,7 @@ class ReceiptOrderApp(App):
         if not results:
             return
         item = results[self.selected_index]
-        self.registered_orders.append(f"[{self.mode}] {item.name}")
+        self.registered_orders.append(OrderEntry(name=item.name, mode=self.mode))
         self._refresh_orders()
 
     def action_backspace_query(self) -> None:
@@ -207,8 +208,17 @@ class ReceiptOrderApp(App):
         if not self.registered_orders:
             orders_widget.update("(no items yet)")
             return
-        lines = [f"{idx}. {label}" for idx, label in enumerate(self.registered_orders, start=1)]
-        orders_widget.update("\n".join(lines))
+        lines = Text()
+        for idx, entry in enumerate(self.registered_orders, start=1):
+            if idx > 1:
+                lines.append("\n")
+            lines.append(f"{idx}. ")
+            if entry.mode in {"R", "G"}:
+                lines.append(entry.mode, style=self._badge_style(entry.mode))
+                lines.append(f" {entry.name}")
+            else:
+                lines.append(entry.name)
+        orders_widget.update(lines)
 
     def _refresh_search(self) -> None:
         self._refresh_search_bar()
@@ -223,9 +233,11 @@ class ReceiptOrderApp(App):
             bar.update("Press R or G to search the menu. Ctrl+Q to quit.")
             return
 
-        badge_class = "badge-r" if self.mode == "R" else "badge-g"
         shown_query = self.query or ""
-        bar.update(f"[{badge_class}]{self.mode}[/]: {shown_query}")
+        text = Text()
+        text.append(self.mode, style=self._badge_style(self.mode))
+        text.append(f": {shown_query}")
+        bar.update(text)
 
     def _refresh_results(self, results: list[MenuItem]) -> None:
         results_widget = self.query_one("#results", Static)
@@ -245,6 +257,11 @@ class ReceiptOrderApp(App):
             pointer = "➤" if idx == self.selected_index else " "
             lines.append(f"{pointer} {item.name}")
         results_widget.update("\n".join(lines))
+
+    def _badge_style(self, mode: str) -> str:
+        if mode == "R":
+            return "bold #ffffff on #b23a48"
+        return "bold #0b1f0f on #5fbf72"
 
 
 def main() -> None:
