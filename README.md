@@ -21,3 +21,12 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 - `app/main.py`: Textual app entry point.
 - `pyproject.toml`: Project metadata, dependencies, and console script.
+
+## Controls
+
+- `G`: switch to Gimbap mode
+- `R`: switch to Ramyun mode
+- Type letters/numbers: build search query
+- `Backspace`: delete one query character
+- `Tab` / `↑` / `↓`: cycle search results
+- `Enter`: register highlighted result into the left order panel
