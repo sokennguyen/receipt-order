@@ -6,9 +6,10 @@ from dataclasses import dataclass
 
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.events import Key
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widgets import Header, Static
 
 
@@ -25,6 +26,75 @@ class OrderEntry:
 
     name: str
     mode: str | None = None
+
+
+def badge_style(mode: str) -> str:
+    """Return a consistent badge style for category tags."""
+    if mode == "R":
+        return "bold #ffffff on #b23a48"
+    return "bold #0b1f0f on #5fbf72"
+
+
+def format_order_label(entry: OrderEntry) -> Text:
+    """Render an order label with an optional colored mode tag."""
+    text = Text()
+    if entry.mode in {"R", "G"}:
+        text.append(entry.mode, style=badge_style(entry.mode))
+        text.append(f" {entry.name}")
+    else:
+        text.append(entry.name)
+    return text
+
+
+class NotesModal(ModalScreen[None]):
+    """Simple centered modal for selected dish notes."""
+
+    BINDINGS = [
+        ("escape", "close", "Close"),
+        ("q", "close", "Close"),
+        ("ctrl+c", "close", "Close"),
+    ]
+
+    CSS = """
+    NotesModal {
+        align: center middle;
+        background: $background 60%;
+    }
+
+    #notes-dialog {
+        width: 44;
+        height: auto;
+        border: round $secondary;
+        background: $panel;
+        padding: 1 2;
+    }
+
+    #notes-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #notes-help {
+        margin-top: 1;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, order: OrderEntry) -> None:
+        super().__init__()
+        self.order = order
+
+    def compose(self) -> ComposeResult:
+        with Container(id="notes-dialog"):
+            yield Static("Notes", id="notes-title")
+            yield Static(id="notes-body")
+            yield Static("Esc / q / Ctrl+C to close", id="notes-help")
+
+    def on_mount(self) -> None:
+        self.query_one("#notes-body", Static).update(format_order_label(self.order))
+
+    def action_close(self) -> None:
+        self.dismiss()
 
 
 MENU_BY_MODE: dict[str, list[MenuItem]] = {
@@ -85,17 +155,23 @@ class ReceiptOrderApp(App):
         padding: 0 1;
     }
 
+    #orders-list {
+        height: 1fr;
+        border: tall $surface;
+        padding: 0 1;
+    }
+
     .pane-title {
         text-style: bold;
         margin-bottom: 1;
     }
-
     """
 
     input_state = reactive("normal")
     mode = reactive("G")
     query = reactive("")
     selected_index = reactive(0)
+    order_selected_index = reactive(None)
 
     BINDINGS = [
         ("tab", "cycle_results(1)", "Next result"),
@@ -125,6 +201,10 @@ class ReceiptOrderApp(App):
         self._refresh_all()
 
     def on_key(self, event: Key) -> None:
+        # While a modal is active, let the modal own keyboard handling.
+        if isinstance(self.screen, NotesModal):
+            return
+
         if not event.is_printable or len(event.character) != 1 or not event.character.isalnum():
             return
 
@@ -132,11 +212,29 @@ class ReceiptOrderApp(App):
         if self.input_state == "normal":
             if key == "t":
                 self.registered_orders.append(OrderEntry(name="Tteokbokki"))
+                self.order_selected_index = len(self.registered_orders) - 1
                 self._refresh_orders()
                 event.stop()
                 return
+
+            if key == "j":
+                self._move_order_selection(1)
+                event.stop()
+                return
+
+            if key == "k":
+                self._move_order_selection(-1)
+                event.stop()
+                return
+
+            if key == "n":
+                self._open_notes_for_selected_order()
+                event.stop()
+                return
+
             if key not in {"g", "r"}:
                 return
+
             self.mode = key.upper()
             self.input_state = "active"
             self.query = ""
@@ -180,6 +278,7 @@ class ReceiptOrderApp(App):
             return
         item = results[self.selected_index]
         self.registered_orders.append(OrderEntry(name=item.name, mode=self.mode))
+        self.order_selected_index = len(self.registered_orders) - 1
         self._refresh_orders()
 
     def action_backspace_query(self) -> None:
@@ -203,21 +302,82 @@ class ReceiptOrderApp(App):
         self._refresh_orders()
         self._refresh_search()
 
+    def _move_order_selection(self, delta: int) -> None:
+        if not self.registered_orders:
+            return
+
+        if self.order_selected_index is None:
+            self.order_selected_index = 0 if delta > 0 else len(self.registered_orders) - 1
+        else:
+            self.order_selected_index = (self.order_selected_index + delta) % len(self.registered_orders)
+        self._refresh_orders()
+
+    def _selected_order(self) -> OrderEntry | None:
+        if self.order_selected_index is None:
+            return None
+        if not (0 <= self.order_selected_index < len(self.registered_orders)):
+            return None
+        return self.registered_orders[self.order_selected_index]
+
+    def _open_notes_for_selected_order(self) -> None:
+        entry = self._selected_order()
+        if entry is None:
+            return
+        self.push_screen(NotesModal(entry))
+
+    def _visible_rows(self, widget: Static) -> int:
+        height = widget.size.height
+        if height <= 0:
+            return 8
+        return max(1, height)
+
+    def _window_bounds(self, total: int, rows: int, selected: int | None) -> tuple[int, int]:
+        if total <= 0:
+            return (0, 0)
+
+        rows = max(1, rows)
+        if total <= rows:
+            return (0, total)
+
+        if selected is None:
+            start = 0
+        else:
+            half = rows // 2
+            start = selected - half
+            start = max(0, start)
+            start = min(start, total - rows)
+
+        return (start, start + rows)
+
     def _refresh_orders(self) -> None:
         orders_widget = self.query_one("#orders-list", Static)
         if not self.registered_orders:
+            self.order_selected_index = None
             orders_widget.update("(no items yet)")
             return
+
+        if self.order_selected_index is not None and self.order_selected_index >= len(self.registered_orders):
+            self.order_selected_index = len(self.registered_orders) - 1
+
+        visible_rows = self._visible_rows(orders_widget)
+        start, end = self._window_bounds(len(self.registered_orders), visible_rows, self.order_selected_index)
+
         lines = Text()
-        for idx, entry in enumerate(self.registered_orders, start=1):
-            if idx > 1:
+        if start > 0:
+            lines.append("⋮\n", style="dim")
+
+        for idx in range(start, end):
+            if idx > start:
                 lines.append("\n")
-            lines.append(f"{idx}. ")
-            if entry.mode in {"R", "G"}:
-                lines.append(entry.mode, style=self._badge_style(entry.mode))
-                lines.append(f" {entry.name}")
-            else:
-                lines.append(entry.name)
+
+            pointer = "➤ " if idx == self.order_selected_index else "  "
+            lines.append(pointer)
+            lines.append(f"{idx + 1}. ")
+            lines.append_text(format_order_label(self.registered_orders[idx]))
+
+        if end < len(self.registered_orders):
+            lines.append("\n⋮", style="dim")
+
         orders_widget.update(lines)
 
     def _refresh_search(self) -> None:
@@ -235,7 +395,7 @@ class ReceiptOrderApp(App):
 
         shown_query = self.query or ""
         text = Text()
-        text.append(self.mode, style=self._badge_style(self.mode))
+        text.append(self.mode, style=badge_style(self.mode))
         text.append(f": {shown_query}")
         bar.update(text)
 
@@ -252,16 +412,23 @@ class ReceiptOrderApp(App):
         if self.selected_index >= len(results):
             self.selected_index = 0
 
-        lines = []
-        for idx, item in enumerate(results):
-            pointer = "➤" if idx == self.selected_index else " "
-            lines.append(f"{pointer} {item.name}")
-        results_widget.update("\n".join(lines))
+        visible_rows = self._visible_rows(results_widget)
+        start, end = self._window_bounds(len(results), visible_rows, self.selected_index)
 
-    def _badge_style(self, mode: str) -> str:
-        if mode == "R":
-            return "bold #ffffff on #b23a48"
-        return "bold #0b1f0f on #5fbf72"
+        lines = Text()
+        if start > 0:
+            lines.append("⋮\n", style="dim")
+
+        for idx in range(start, end):
+            if idx > start:
+                lines.append("\n")
+            pointer = "➤ " if idx == self.selected_index else "  "
+            lines.append(f"{pointer}{results[idx].name}")
+
+        if end < len(results):
+            lines.append("\n⋮", style="dim")
+
+        results_widget.update(lines)
 
 
 def main() -> None:
