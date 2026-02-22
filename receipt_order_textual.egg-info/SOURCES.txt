@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+app/__init__.py
+app/main.py
+receipt_order_textual.egg-info/PKG-INFO
+receipt_order_textual.egg-info/SOURCES.txt
+receipt_order_textual.egg-info/dependency_links.txt
+receipt_order_textual.egg-info/entry_points.txt
+receipt_order_textual.egg-info/requires.txt
+receipt_order_textual.egg-info/top_level.txt

@@ -1,0 +1,40 @@
+Metadata-Version: 2.1
+Name: receipt-order-textual
+Version: 0.1.0
+Summary: A starter Textual terminal app
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: textual<1.0,>=0.58
+
+# Receipt Order (Textual)
+
+This repository is now initialized with a minimal [Textual](https://textual.textualize.io/) app.
+
+## Quick start
+
+1. Create and activate a virtual environment.
+2. Install dependencies:
+
+   ```bash
+   pip install -e .
+   ```
+
+3. Run the app:
+
+   ```bash
+   receipt-order
+   ```
+
+## Project layout
+
+- `app/main.py`: Textual app entry point.
+- `pyproject.toml`: Project metadata, dependencies, and console script.
+
+## Controls
+
+- `G`: switch to Gimbap mode
+- `R`: switch to Ramyun mode
+- Type letters/numbers: build search query
+- `Backspace`: delete one query character
+- `Tab` / `↑` / `↓`: cycle search results
+- `Enter`: register highlighted result into the left order panel

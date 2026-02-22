@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.events import Key
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Header, Static
 
 
 @dataclass(frozen=True)
@@ -80,20 +80,35 @@ class ReceiptOrderApp(App):
         text-style: bold;
         margin-bottom: 1;
     }
+
+    .badge-r {
+        background: $error;
+        color: $text;
+        padding: 0 1;
+        text-style: bold;
+    }
+
+    .badge-g {
+        background: $success;
+        color: $text;
+        padding: 0 1;
+        text-style: bold;
+    }
     """
 
+    input_state = reactive("normal")
     mode = reactive("G")
     query = reactive("")
     selected_index = reactive(0)
 
     BINDINGS = [
-        ("g", "set_mode('G')", "Mode: Gimbap"),
-        ("r", "set_mode('R')", "Mode: Ramyun"),
         ("tab", "cycle_results(1)", "Next result"),
         ("up", "cycle_results(-1)", "Previous result"),
         ("down", "cycle_results(1)", "Next result"),
         ("enter", "register_selected", "Register item"),
         ("backspace", "backspace_query", "Delete query char"),
+        ("ctrl+c", "cancel_active_mode", "Exit active mode"),
+        ("ctrl+q", "quit", "Quit"),
     ]
 
     def __init__(self) -> None:
@@ -109,28 +124,44 @@ class ReceiptOrderApp(App):
             with Vertical(id="search-pane"):
                 yield Static(id="search-bar")
                 yield Static(id="results")
-        yield Footer()
 
     def on_mount(self) -> None:
         self._refresh_all()
 
     def on_key(self, event: Key) -> None:
-        if event.is_printable and len(event.character) == 1 and event.character.isalnum():
-            if event.character.lower() in {"g", "r"}:
+        if not event.is_printable or len(event.character) != 1 or not event.character.isalnum():
+            return
+
+        key = event.character.lower()
+        if self.input_state == "normal":
+            if key not in {"g", "r"}:
                 return
-            self.query += event.character
+            self.mode = key.upper()
+            self.input_state = "active"
+            self.query = ""
             self.selected_index = 0
             self._refresh_search()
-
-    def action_set_mode(self, mode: str) -> None:
-        if mode not in MENU_BY_MODE:
+            event.stop()
             return
-        self.mode = mode
+
+        self.query += event.character
+        self.selected_index = 0
+        self._refresh_search()
+        event.stop()
+
+    def action_cancel_active_mode(self) -> None:
+        if self.input_state == "normal":
+            return
+
+        self.input_state = "normal"
         self.query = ""
         self.selected_index = 0
         self._refresh_search()
 
     def action_cycle_results(self, delta: int) -> None:
+        if self.input_state != "active":
+            return
+
         results = self._filtered_results()
         if not results:
             self.selected_index = 0
@@ -140,6 +171,9 @@ class ReceiptOrderApp(App):
         self._refresh_results(results)
 
     def action_register_selected(self) -> None:
+        if self.input_state != "active":
+            return
+
         results = self._filtered_results()
         if not results:
             return
@@ -148,6 +182,9 @@ class ReceiptOrderApp(App):
         self._refresh_orders()
 
     def action_backspace_query(self) -> None:
+        if self.input_state != "active":
+            return
+
         if not self.query:
             return
         self.query = self.query[:-1]
@@ -175,15 +212,27 @@ class ReceiptOrderApp(App):
 
     def _refresh_search(self) -> None:
         self._refresh_search_bar()
+        if self.input_state == "normal":
+            self._refresh_results([])
+            return
         self._refresh_results(self._filtered_results())
 
     def _refresh_search_bar(self) -> None:
         bar = self.query_one("#search-bar", Static)
+        if self.input_state == "normal":
+            bar.update("Press R or G to search the menu. Ctrl+Q to quit.")
+            return
+
+        badge_class = "badge-r" if self.mode == "R" else "badge-g"
         shown_query = self.query or ""
-        bar.update(f"MODE: {self.mode}    QUERY: {shown_query}")
+        bar.update(f"[{badge_class}]{self.mode}[/]: {shown_query}")
 
     def _refresh_results(self, results: list[MenuItem]) -> None:
         results_widget = self.query_one("#results", Static)
+        if self.input_state == "normal":
+            results_widget.update("")
+            return
+
         if not results:
             results_widget.update("No results")
             return
