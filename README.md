@@ -44,4 +44,6 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 ### Notes modal
 
+- `J` / `K` / `↑` / `↓`: move note cursor
+- `Enter`: toggle highlighted note on/off
 - `Esc` / `q` / `Ctrl+C`: close modal
