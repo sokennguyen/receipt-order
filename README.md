@@ -28,6 +28,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 - `R` / `G`: enter Ramyun or Gimbap search mode
 - `T`: add `Tteokbokki` directly to registered orders
+- `D`: delete selected order entry (selection stays at current spot)
 - `J` / `K`: move register selection next / previous (wraps)
 - `N`: open notes modal for selected register item
 - `Ctrl+C`: no-op

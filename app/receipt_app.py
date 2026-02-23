@@ -117,6 +117,11 @@ class ReceiptOrderApp(App):
                 event.stop()
                 return
 
+            if key == "d":
+                self._delete_selected_order()
+                event.stop()
+                return
+
             if key == "j":
                 self._move_order_selection(1)
                 event.stop()
@@ -219,6 +224,25 @@ class ReceiptOrderApp(App):
             self.order_selected_index = 0 if delta > 0 else len(self.registered_orders) - 1
         else:
             self.order_selected_index = (self.order_selected_index + delta) % len(self.registered_orders)
+        self._refresh_orders()
+
+    def _delete_selected_order(self) -> None:
+        if not self.registered_orders or self.order_selected_index is None:
+            return
+
+        idx = self.order_selected_index
+        if not (0 <= idx < len(self.registered_orders)):
+            self.order_selected_index = None
+            self._refresh_orders()
+            return
+
+        del self.registered_orders[idx]
+
+        if not self.registered_orders:
+            self.order_selected_index = None
+        else:
+            self.order_selected_index = min(idx, len(self.registered_orders) - 1)
+
         self._refresh_orders()
 
     def _selected_order(self) -> OrderEntry | None:
