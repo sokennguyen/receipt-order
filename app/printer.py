@@ -13,7 +13,7 @@ from app.config import (
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
 )
-from app.data import NOTE_CATALOG, print_label_override_for_dish
+from app.data import NOTE_CATALOG, print_label_override_for_dish, print_note_alias_for_id
 from app.models import OrderEntry
 
 
@@ -132,7 +132,7 @@ def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
 
 
 def _ordered_note_labels(note_key: frozenset[str]) -> list[str]:
-    return [NOTE_CATALOG[note_id] for note_id in NOTE_CATALOG if note_id in note_key]
+    return [print_note_alias_for_id(note_id) for note_id in NOTE_CATALOG if note_id in note_key]
 
 
 def _grouped_print_label(item: OrderEntry, count: int) -> str:

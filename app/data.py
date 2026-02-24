@@ -147,6 +147,28 @@ def print_label_override_for_dish(dish_id: str) -> str | None:
     return meta.print_label
 
 
+def print_note_alias_for_id(note_id: str) -> str:
+    """Return a compact print alias for a note id."""
+    prefix_to_symbol = {
+        "no_": "x",
+        "less_": "-",
+        "more_": "+",
+        "add_": "^",
+    }
+    qualifier_tokens = {"no", "less", "more", "add"}
+
+    for prefix, symbol in prefix_to_symbol.items():
+        if note_id.startswith(prefix):
+            remainder = note_id[len(prefix) :]
+            tokens = [token for token in remainder.split("_") if token and token not in qualifier_tokens]
+            item_text = " ".join(tokens).strip().lower()
+            if not item_text:
+                item_text = remainder.replace("_", " ").strip().lower()
+            return f"{symbol} {item_text}"
+
+    return NOTE_CATALOG.get(note_id, note_id.replace("_", " ").title())
+
+
 MENU_DISH_IDS_BY_MODE: dict[str, list[str]] = {
     "G": [
         "beef_gimbap",
