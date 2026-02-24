@@ -24,20 +24,25 @@ NOTE_CATALOG: dict[str, str] = {
     "extra_tuna": "Extra Tuna",
     "less_rice": "Less Rice",
     "extra_kimchi": "Extra Kimchi",
+    "no_cuccumber": "No Cuccumber"
 }
 
 MODE_NOTE_DEFAULTS: dict[str, list[str]] = {
     "R": ["less_spicy", "more_spicy", "no_mushroom"],
-    "G": ["less_rice"],
+    "G": ["no_cuccumber"],
 }
 
 DISH_NOTE_OVERRIDES: dict[str, dict[str, list[str]]] = {
-    "classic_ramyun": {
+    "pork_ramyun": {
         "add": ["more_more_spicy", "no_onions", "no_spring_onion", "no_carrots", "more_meat", "extra_broth"],
         "remove": [],
     },
-    "shin_ramyun": {
+    "chicken_ramyun": {
         "add": ["more_more_spicy", "no_onions", "no_spring_onion", "extra_broth"],
+        "remove": ["more_meat"],
+    },
+    "original_ramyun": {
+        "add": ["more_more_spicy", "no_onions", "no_spring_onion", "no_carrots", "more_meat", "extra_broth"],
         "remove": [],
     },
     "cheese_ramyun": {
@@ -49,48 +54,64 @@ DISH_NOTE_OVERRIDES: dict[str, dict[str, list[str]]] = {
         "remove": ["more_meat"],
     },
     "kimchi_ramyun": {
-        "add": ["less_less_spicy", "no_kimchi", "extra_kimchi"],
+        "add": ["vegan", "less_less_spicy", "no_kimchi", "extra_kimchi"],
         "remove": [],
     },
-    "pork_gimbap": {
+    "tofu_ramyun": {
+        "add": ["vegan", "less_less_spicy", "add_bok_choy", "no_zucchini"],
+        "remove": ["more_meat"],
+    },
+    "beef_gimbap": {
         "add": ["no_carrots", "no_onions", "more_meat"],
         "remove": [],
     },
-    "tuna_mayo_gimbap": {
+    "tuna_gimbap": {
         "add": ["extra_tuna", "no_onions"],
         "remove": [],
     },
-    "cheese_gimbap": {
-        "add": ["extra_cheese", "no_carrots"],
+    "spicy_tuna_gimbap": {
+        "add": ["extra_tuna", "less_spicy", "more_spicy", "no_onions"],
         "remove": [],
     },
-    "bulgogi_gimbap": {
+    "sausage_gimbap": {
         "add": ["more_meat", "no_onions", "no_carrots"],
         "remove": [],
     },
-    "kimchi_gimbap": {
-        "add": ["extra_kimchi", "no_kimchi"],
+    "mushroom_gimbap": {
+        "add": ["no_onions", "no_carrots"],
+        "remove": [],
+    },
+    "salad_gimbap": {
+        "add": ["less_rice"],
         "remove": [],
     },
     "tteokbokki": {
         "add": ["less_spicy", "less_less_spicy", "more_spicy", "more_more_spicy", "extra_cheese", "no_onions"],
         "remove": [],
     },
+    "tofu_gimbap": {
+        "add": ["vegan"],
+        "remove": [],
+    },
 }
 
 MENU_BY_MODE: dict[str, list[MenuItem]] = {
     "G": [
-        MenuItem("pork_gimbap", "Pork Gimbap"),
-        MenuItem("tuna_mayo_gimbap", "Tuna Mayo Gimbap"),
-        MenuItem("cheese_gimbap", "Cheese Gimbap"),
-        MenuItem("bulgogi_gimbap", "Bulgogi Gimbap"),
-        MenuItem("kimchi_gimbap", "Kimchi Gimbap"),
+        MenuItem("beef_gimbap", "Beef Gimbap"),
+        MenuItem("tuna_gimbap", "Tuna Gimbap"),
+        MenuItem("spicy_tuna_gimbap", "S-Tuna Gimbap"),
+        MenuItem("sausage_gimbap", "Sausage Gimbap"),
+        MenuItem("mushroom_gimbap", "Mushroom Gimbap"),
+        MenuItem("salad_gimbap", "Salad Gimbap"),
+        MenuItem("tofu_gimbap", "Tofu Gimbap"),
     ],
     "R": [
-        MenuItem("classic_ramyun", "Classic Ramyun"),
-        MenuItem("shin_ramyun", "Shin Ramyun"),
+        MenuItem("pork_ramyun", "Pork Ramyun"),
+        MenuItem("chicken_ramyun", "Chicken Ramyun"),
+        MenuItem("original_ramyun", "Original Ramyun"),
         MenuItem("cheese_ramyun", "Cheese Ramyun"),
-        MenuItem("seafood_ramyun", "Seafood Ramyun"),
         MenuItem("kimchi_ramyun", "Kimchi Ramyun"),
+        MenuItem("seafood_ramyun", "Seafood Ramyun"),
+        MenuItem("tofu_ramyun", "Tofu Ramyun"),
     ],
 }
