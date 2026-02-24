@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.config import (
     PRINTER_FONT_PATH,
     PRINTER_FONT_SIZE,
+    PRINTER_LEFT_INDENT_PX,
     PRINTER_USB_PRODUCT_ID,
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
@@ -43,10 +44,9 @@ def _render_line(text: str, font: object) -> object:
     draw = ImageDraw.Draw(img)
 
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
 
-    x = (PRINTER_WIDTH_PX - text_width) // 2
+    x = PRINTER_LEFT_INDENT_PX
     y = (canvas_height - text_height) // 2
     draw.text((x, y), text, font=font, fill=0)
     return img

@@ -31,7 +31,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `D`: delete selected order entry (selection stays at current spot)
 - `J` / `K`: move register selection next / previous (wraps)
 - `N`: open notes modal for selected register item
-- `Ctrl+O`: save current rows to SQLite and print them as one batch
+- `Ctrl+S`: save current rows to SQLite and print them as one batch
 - `Ctrl+C`: no-op
 - `Ctrl+Q`: quit app
 
@@ -53,7 +53,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 ## Persistence / print flow
 
 - SQLite file path: `data/receipt.db`
-- Submit (`Ctrl+O`) writes `orders`, `order_items`, and `order_item_notes`
+- Submit (`Ctrl+S`) writes `orders`, `order_items`, and `order_item_notes`
 - Print format:
   - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
   - untagged rows: plain name (example: `Tteokbokki`)

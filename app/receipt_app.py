@@ -86,7 +86,7 @@ class ReceiptOrderApp(App):
         ("down", "cycle_results(1)", "Next result"),
         ("enter", "register_selected", "Register item"),
         ("backspace", "backspace_query", "Delete query char"),
-        Binding("ctrl+o", "submit_and_print", "Submit + Print", priority=True),
+        Binding("ctrl+s", "submit_and_print", "Submit + Print", priority=True),
         ("ctrl+c", "cancel_active_mode", "Exit active mode"),
         ("ctrl+q", "quit", "Quit"),
     ]
@@ -133,8 +133,8 @@ class ReceiptOrderApp(App):
             f"on_key key={event.key!r} char={event.character!r} printable={event.is_printable} state={self.input_state!r}"
         )
 
-        if event.key == "ctrl+o":
-            self._log_debug("on_key detected ctrl+o -> action_submit_and_print")
+        if event.key == "ctrl+s":
+            self._log_debug("on_key detected ctrl+s -> action_submit_and_print")
             self.action_submit_and_print()
             event.stop()
             return
@@ -403,7 +403,7 @@ class ReceiptOrderApp(App):
         bar = self.query_one("#search-bar", Static)
         if self.input_state == "normal":
             status = self.system_status or "Ready"
-            bar.update(f"Press R or G to search. Ctrl+O submit/print.\\n{status}")
+            bar.update(f"Press R or G to search. Ctrl+S submit/print.\\n{status}")
             return
 
         shown_query = self.query or ""
