@@ -115,3 +115,11 @@ MENU_BY_MODE: dict[str, list[MenuItem]] = {
         MenuItem("tofu_ramyun", "Tofu Ramyun"),
     ],
 }
+
+SEARCH_ALIASES_BY_DISH: dict[str, list[str]] = {
+    "spicy_tuna_gimbap": ["st", "stuna", "s-tuna"],
+    "chicken_ramyun": ["chix", "chicken"],
+    "original_ramyun": ["orig", "original"],
+    "tofu_ramyun": ["tofu", "vegtofu"],
+    "tofu_gimbap": ["tofu", "vegtofu"],
+}

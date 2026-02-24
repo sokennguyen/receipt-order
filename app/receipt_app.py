@@ -14,7 +14,7 @@ from textual.events import Key
 from textual.reactive import reactive
 from textual.widgets import Header, Static
 
-from app.data import MENU_BY_MODE, NOTE_CATALOG
+from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH
 from app.models import MenuItem, OrderEntry
 from app.notes_modal import NotesModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
@@ -280,8 +280,26 @@ class ReceiptOrderApp(App):
         source = MENU_BY_MODE[self.mode]
         if not self.query:
             return source
-        q = self.query.lower()
-        return [item for item in source if q in item.name.lower()]
+        q = self._normalize_search_text(self.query)
+        if not q:
+            return source
+
+        matched: list[MenuItem] = []
+        for item in source:
+            normalized_name = self._normalize_search_text(item.name)
+            normalized_dish_id = self._normalize_search_text(item.dish_id)
+            if q in normalized_name or q in normalized_dish_id:
+                matched.append(item)
+                continue
+
+            aliases = SEARCH_ALIASES_BY_DISH.get(item.dish_id, [])
+            if any(q in self._normalize_search_text(alias) for alias in aliases):
+                matched.append(item)
+
+        return matched
+
+    def _normalize_search_text(self, text: str) -> str:
+        return "".join(ch for ch in text.lower() if ch.isalnum())
 
     def _refresh_all(self) -> None:
         self._refresh_orders()

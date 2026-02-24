@@ -43,6 +43,9 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `Enter`: register highlighted result into the left order panel
 - `Ctrl+C`: exit active mode back to normal mode
 - `Ctrl+Q`: quit app
+- Search supports shorthand aliases and punctuation-insensitive matching
+  - examples: `s-tuna`, `stuna`, and `st` all match `S-Tuna Gimbap`
+  - example: `chix` matches `Chicken Ramyun`
 
 ### Notes modal
 
