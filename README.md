@@ -21,6 +21,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 - `app/main.py`: Textual app entry point.
 - `pyproject.toml`: Project metadata, dependencies, and console script.
+- `app/data.py`: Canonical dish metadata for display/search/print labels.
 
 ## Controls
 
@@ -59,6 +60,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - Submit (`Ctrl+S`) writes `orders`, `order_items`, and `order_item_notes`
 - Print format:
   - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
-  - untagged rows: plain name (example: `Tteokbokki`)
+  - untagged rows: plain name unless a dish print override exists (example override: `T.T.` for `tteokbokki`)
+  - duplicate rows on a ticket are grouped and shown with quantity suffix (example: `R-Classic 3`)
 - v1 print output ignores notes text (notes are still saved in DB)
 - If print fails after save, DB records remain (status becomes `PRINT_FAILED`)

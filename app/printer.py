@@ -11,11 +11,16 @@ from app.config import (
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
 )
+from app.data import print_label_override_for_dish
 from app.models import OrderEntry
 
 
 def to_print_label(item: OrderEntry) -> str:
     """Format printed line as <Mode>-<BaseName> or plain for untagged rows."""
+    override = print_label_override_for_dish(item.dish_id)
+    if override is not None:
+        return override
+
     base_name = item.name
     for suffix in (" Ramyun", " Gimbap"):
         if base_name.endswith(suffix):
@@ -59,6 +64,30 @@ def _render_spacer(height_px: int) -> object:
     return Image.new("1", (PRINTER_WIDTH_PX, max(1, height_px)), color=1)
 
 
+def _group_print_items(items: list[OrderEntry]) -> list[tuple[OrderEntry, int]]:
+    """Group by mode+dish while preserving first-seen order."""
+    groups: dict[tuple[str | None, str], tuple[OrderEntry, int]] = {}
+    ordered_keys: list[tuple[str | None, str]] = []
+
+    for item in items:
+        key = (item.mode, item.dish_id)
+        if key in groups:
+            representative, count = groups[key]
+            groups[key] = (representative, count + 1)
+            continue
+        groups[key] = (item, 1)
+        ordered_keys.append(key)
+
+    return [groups[key] for key in ordered_keys]
+
+
+def _grouped_print_label(item: OrderEntry, count: int) -> str:
+    base = to_print_label(item)
+    if count <= 1:
+        return base
+    return f"{base} {count}"
+
+
 def print_order_batch(items: list[OrderEntry]) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
@@ -72,14 +101,15 @@ def print_order_batch(items: list[OrderEntry]) -> None:
 
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
     font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
+    grouped_items = _group_print_items(items)
 
-    for item in items:
-        line = to_print_label(item)
+    for item, count in grouped_items:
+        line = _grouped_print_label(item, count)
         img = _render_line(line, font)
         printer.image(img)
 
-    # Give single-item tickets a minimal extra tail for easier tearing.
-    if len(items) == 1:
+    # Give single-line tickets a minimal extra tail for easier tearing.
+    if len(grouped_items) == 1:
         printer.image(_render_spacer(PRINTER_SINGLE_ITEM_SPACER_PX))
 
     printer.cut()

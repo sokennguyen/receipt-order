@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.models import MenuItem
+
+
+@dataclass(frozen=True)
+class DishMeta:
+    """Canonical text metadata for a dish."""
+
+    display_name: str
+    aliases: list[str]
+    print_label: str | None = None
+
 
 NOTE_CATALOG: dict[str, str] = {
     "less_spicy": "Less Spicy",
@@ -95,31 +107,68 @@ DISH_NOTE_OVERRIDES: dict[str, dict[str, list[str]]] = {
     },
 }
 
-MENU_BY_MODE: dict[str, list[MenuItem]] = {
+DISH_META_BY_ID: dict[str, DishMeta] = {
+    "beef_gimbap": DishMeta(display_name="Beef Gimbap", aliases=[]),
+    "tuna_gimbap": DishMeta(display_name="Tuna Gimbap", aliases=[]),
+    "spicy_tuna_gimbap": DishMeta(display_name="S-Tuna Gimbap", aliases=["st", "stuna", "s-tuna"]),
+    "sausage_gimbap": DishMeta(display_name="Sausage Gimbap", aliases=[]),
+    "mushroom_gimbap": DishMeta(display_name="Mushroom Gimbap", aliases=[]),
+    "salad_gimbap": DishMeta(display_name="Salad Gimbap", aliases=[]),
+    "tofu_gimbap": DishMeta(display_name="Tofu Gimbap", aliases=["tofu", "vegtofu"]),
+    "pork_ramyun": DishMeta(display_name="Pork Ramyun", aliases=[]),
+    "chicken_ramyun": DishMeta(display_name="Chicken Ramyun", aliases=["chix", "chicken"]),
+    "original_ramyun": DishMeta(display_name="Original Ramyun", aliases=[]),
+    "cheese_ramyun": DishMeta(display_name="Cheese Ramyun", aliases=["ches"]),
+    "kimchi_ramyun": DishMeta(display_name="Kimchi Ramyun", aliases=[]),
+    "seafood_ramyun": DishMeta(display_name="Seafood Ramyun", aliases=[], print_label="R-Sea"),
+    "tofu_ramyun": DishMeta(display_name="Tofu Ramyun", aliases=["tofu", "vegtofu"]),
+    "tteokbokki": DishMeta(display_name="Tteokbokki", aliases=[], print_label="T.T."),
+}
+
+
+def display_name_for_dish(dish_id: str) -> str:
+    """Get display name for a dish id."""
+    meta = DISH_META_BY_ID.get(dish_id)
+    if meta is None:
+        return dish_id
+    return meta.display_name
+
+
+def print_label_override_for_dish(dish_id: str) -> str | None:
+    """Get optional explicit print label for a dish id."""
+    meta = DISH_META_BY_ID.get(dish_id)
+    if meta is None:
+        return None
+    return meta.print_label
+
+
+MENU_DISH_IDS_BY_MODE: dict[str, list[str]] = {
     "G": [
-        MenuItem("beef_gimbap", "Beef Gimbap"),
-        MenuItem("tuna_gimbap", "Tuna Gimbap"),
-        MenuItem("spicy_tuna_gimbap", "S-Tuna Gimbap"),
-        MenuItem("sausage_gimbap", "Sausage Gimbap"),
-        MenuItem("mushroom_gimbap", "Mushroom Gimbap"),
-        MenuItem("salad_gimbap", "Salad Gimbap"),
-        MenuItem("tofu_gimbap", "Tofu Gimbap"),
+        "beef_gimbap",
+        "tuna_gimbap",
+        "spicy_tuna_gimbap",
+        "sausage_gimbap",
+        "mushroom_gimbap",
+        "salad_gimbap",
+        "tofu_gimbap",
     ],
     "R": [
-        MenuItem("pork_ramyun", "Pork Ramyun"),
-        MenuItem("chicken_ramyun", "Chicken Ramyun"),
-        MenuItem("original_ramyun", "Original Ramyun"),
-        MenuItem("cheese_ramyun", "Cheese Ramyun"),
-        MenuItem("kimchi_ramyun", "Kimchi Ramyun"),
-        MenuItem("seafood_ramyun", "Seafood Ramyun"),
-        MenuItem("tofu_ramyun", "Tofu Ramyun"),
+        "pork_ramyun",
+        "chicken_ramyun",
+        "original_ramyun",
+        "cheese_ramyun",
+        "kimchi_ramyun",
+        "seafood_ramyun",
+        "tofu_ramyun",
     ],
 }
 
+MENU_BY_MODE: dict[str, list[MenuItem]] = {
+    mode: [MenuItem(dish_id, display_name_for_dish(dish_id)) for dish_id in dish_ids]
+    for mode, dish_ids in MENU_DISH_IDS_BY_MODE.items()
+}
+
+# Compatibility export: derived from canonical dish metadata.
 SEARCH_ALIASES_BY_DISH: dict[str, list[str]] = {
-    "spicy_tuna_gimbap": ["st", "stuna", "s-tuna"],
-    "chicken_ramyun": ["chix", "chicken"],
-    "original_ramyun": ["orig", "original"],
-    "tofu_ramyun": ["tofu", "vegtofu"],
-    "tofu_gimbap": ["tofu", "vegtofu"],
+    dish_id: list(meta.aliases) for dish_id, meta in DISH_META_BY_ID.items() if meta.aliases
 }

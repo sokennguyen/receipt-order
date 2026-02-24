@@ -14,7 +14,7 @@ from textual.events import Key
 from textual.reactive import reactive
 from textual.widgets import Header, Static
 
-from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH
+from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH, display_name_for_dish
 from app.models import MenuItem, OrderEntry
 from app.notes_modal import NotesModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
@@ -145,7 +145,7 @@ class ReceiptOrderApp(App):
         key = event.character.lower()
         if self.input_state == "normal":
             if key == "t":
-                self.registered_orders.append(OrderEntry(dish_id="tteokbokki", name="Tteokbokki"))
+                self.registered_orders.append(OrderEntry(dish_id="tteokbokki", name=display_name_for_dish("tteokbokki")))
                 self.order_selected_index = len(self.registered_orders) - 1
                 self._refresh_orders()
                 event.stop()
