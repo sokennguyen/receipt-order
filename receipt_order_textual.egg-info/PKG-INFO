@@ -1,10 +1,12 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: receipt-order-textual
 Version: 0.1.0
-Summary: A starter Textual terminal app
+Summary: Restaurant order taking system
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: textual<1.0,>=0.58
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: python-escpos>=3.1
 
 # Receipt Order (Textual)
 
@@ -32,9 +34,38 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 ## Controls
 
-- `G`: switch to Gimbap mode
-- `R`: switch to Ramyun mode
+### Normal mode
+
+- `R` / `G`: enter Ramyun or Gimbap search mode
+- `T`: add `Tteokbokki` directly to registered orders
+- `D`: delete selected order entry (selection stays at current spot)
+- `J` / `K`: move register selection next / previous (wraps)
+- `N`: open notes modal for selected register item
+- `Ctrl+O`: save current rows to SQLite and print them as one batch
+- `Ctrl+C`: no-op
+- `Ctrl+Q`: quit app
+
+### Active mode
+
 - Type letters/numbers: build search query
 - `Backspace`: delete one query character
 - `Tab` / `↑` / `↓`: cycle search results
 - `Enter`: register highlighted result into the left order panel
+- `Ctrl+C`: exit active mode back to normal mode
+- `Ctrl+Q`: quit app
+
+### Notes modal
+
+- `J` / `K` / `↑` / `↓`: move note cursor
+- `Enter`: toggle highlighted note on/off
+- `Esc` / `q` / `Ctrl+C`: close modal
+
+## Persistence / print flow
+
+- SQLite file path: `data/receipt.db`
+- Submit (`Ctrl+O`) writes `orders`, `order_items`, and `order_item_notes`
+- Print format:
+  - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
+  - untagged rows: plain name (example: `Tteokbokki`)
+- v1 print output ignores notes text (notes are still saved in DB)
+- If print fails after save, DB records remain (status becomes `PRINT_FAILED`)

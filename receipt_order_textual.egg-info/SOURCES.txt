@@ -1,7 +1,15 @@
 README.md
 pyproject.toml
 app/__init__.py
+app/config.py
+app/data.py
 app/main.py
+app/models.py
+app/notes_modal.py
+app/persistence.py
+app/printer.py
+app/receipt_app.py
+app/rendering.py
 receipt_order_textual.egg-info/PKG-INFO
 receipt_order_textual.egg-info/SOURCES.txt
 receipt_order_textual.egg-info/dependency_links.txt
