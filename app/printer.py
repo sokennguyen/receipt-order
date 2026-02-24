@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.config import (
     PRINTER_FONT_PATH,
     PRINTER_FONT_SIZE,
@@ -11,8 +13,16 @@ from app.config import (
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
 )
-from app.data import print_label_override_for_dish
+from app.data import NOTE_CATALOG, print_label_override_for_dish
 from app.models import OrderEntry
+
+
+@dataclass
+class _GroupedPrintRow:
+    item: OrderEntry
+    count: int
+    note_key: frozenset[str]
+    first_seen_index: int
 
 
 def to_print_label(item: OrderEntry) -> str:
@@ -64,28 +74,41 @@ def _render_spacer(height_px: int) -> object:
     return Image.new("1", (PRINTER_WIDTH_PX, max(1, height_px)), color=1)
 
 
-def _group_print_items(items: list[OrderEntry]) -> list[tuple[OrderEntry, int]]:
-    """Group by mode+dish while preserving first-seen order."""
-    groups: dict[tuple[str | None, str], tuple[OrderEntry, int]] = {}
-    ordered_keys: list[tuple[str | None, str]] = []
+def _category_rank(mode: str | None) -> int:
+    if mode == "G":
+        return 0
+    if mode == "R":
+        return 1
+    return 2
 
-    for item in items:
-        key = (item.mode, item.dish_id)
-        if key in groups:
-            representative, count = groups[key]
-            groups[key] = (representative, count + 1)
+
+def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
+    """Group by mode+dish+exact note set and then sort for print."""
+    groups: dict[tuple[str | None, str, frozenset[str]], _GroupedPrintRow] = {}
+
+    for idx, item in enumerate(items):
+        note_key = frozenset(item.selected_notes)
+        key = (item.mode, item.dish_id, note_key)
+        row = groups.get(key)
+        if row is not None:
+            row.count += 1
             continue
-        groups[key] = (item, 1)
-        ordered_keys.append(key)
+        groups[key] = _GroupedPrintRow(item=item, count=1, note_key=note_key, first_seen_index=idx)
 
-    return [groups[key] for key in ordered_keys]
+    rows = list(groups.values())
+    rows.sort(key=lambda row: (_category_rank(row.item.mode), -row.count, row.first_seen_index))
+    return rows
+
+
+def _ordered_note_labels(note_key: frozenset[str]) -> list[str]:
+    return [NOTE_CATALOG[note_id] for note_id in NOTE_CATALOG if note_id in note_key]
 
 
 def _grouped_print_label(item: OrderEntry, count: int) -> str:
     base = to_print_label(item)
     if count <= 1:
         return base
-    return f"{base} {count}"
+    return f"{base} │{count}"
 
 
 def print_order_batch(items: list[OrderEntry]) -> None:
@@ -103,10 +126,14 @@ def print_order_batch(items: list[OrderEntry]) -> None:
     font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
     grouped_items = _group_print_items(items)
 
-    for item, count in grouped_items:
-        line = _grouped_print_label(item, count)
+    for row in grouped_items:
+        line = _grouped_print_label(row.item, row.count)
         img = _render_line(line, font)
         printer.image(img)
+
+        for note_label in _ordered_note_labels(row.note_key):
+            note_line = _render_line(f"    {note_label}", font)
+            printer.image(note_line)
 
     # Give single-line tickets a minimal extra tail for easier tearing.
     if len(grouped_items) == 1:
