@@ -6,6 +6,7 @@ from app.config import (
     PRINTER_FONT_PATH,
     PRINTER_FONT_SIZE,
     PRINTER_LEFT_INDENT_PX,
+    PRINTER_SINGLE_ITEM_SPACER_PX,
     PRINTER_USB_PRODUCT_ID,
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
@@ -52,6 +53,12 @@ def _render_line(text: str, font: object) -> object:
     return img
 
 
+def _render_spacer(height_px: int) -> object:
+    from PIL import Image
+
+    return Image.new("1", (PRINTER_WIDTH_PX, max(1, height_px)), color=1)
+
+
 def print_order_batch(items: list[OrderEntry]) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
@@ -70,5 +77,9 @@ def print_order_batch(items: list[OrderEntry]) -> None:
         line = to_print_label(item)
         img = _render_line(line, font)
         printer.image(img)
+
+    # Give single-item tickets a minimal extra tail for easier tearing.
+    if len(items) == 1:
+        printer.image(_render_spacer(PRINTER_SINGLE_ITEM_SPACER_PX))
 
     printer.cut()
