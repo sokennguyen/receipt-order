@@ -20,6 +20,7 @@ class SavedOrderBatch:
 
     order_id: str
     created_at: str
+    order_number: int
     items: list[OrderEntry]
 
 
@@ -43,6 +44,7 @@ def bootstrap_schema() -> None:
             CREATE TABLE IF NOT EXISTS orders (
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
+                order_number INTEGER,
                 source TEXT NOT NULL DEFAULT 'tui',
                 status TEXT NOT NULL
             );
@@ -72,10 +74,16 @@ def bootstrap_schema() -> None:
                 ON order_item_notes(order_item_id);
             """
         )
+        order_columns = {row[1] for row in conn.execute("PRAGMA table_info(orders)")}
+        if "order_number" not in order_columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN order_number INTEGER")
 
 
-def save_order_batch(items: Iterable[OrderEntry]) -> SavedOrderBatch:
+def save_order_batch(items: Iterable[OrderEntry], order_number: int) -> SavedOrderBatch:
     """Persist a full order batch and return saved batch metadata."""
+    if not (1 <= order_number <= 1000):
+        raise ValueError("order_number must be between 1 and 1000")
+
     copied_items = [
         OrderEntry(
             dish_id=item.dish_id,
@@ -94,8 +102,8 @@ def save_order_batch(items: Iterable[OrderEntry]) -> SavedOrderBatch:
     with _connect() as conn:
         with conn:
             conn.execute(
-                "INSERT INTO orders (id, created_at, source, status) VALUES (?, ?, 'tui', 'SAVED')",
-                (order_id, created_at),
+                "INSERT INTO orders (id, created_at, order_number, source, status) VALUES (?, ?, ?, 'tui', 'SAVED')",
+                (order_id, created_at, order_number),
             )
 
             for idx, item in enumerate(copied_items):
@@ -119,7 +127,7 @@ def save_order_batch(items: Iterable[OrderEntry]) -> SavedOrderBatch:
                         (order_item_id, note_id, NOTE_CATALOG[note_id]),
                     )
 
-    return SavedOrderBatch(order_id=order_id, created_at=created_at, items=copied_items)
+    return SavedOrderBatch(order_id=order_id, created_at=created_at, order_number=order_number, items=copied_items)
 
 
 def update_order_status(order_id: str, status: str) -> None:

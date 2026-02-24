@@ -12,13 +12,15 @@ def badge_style(mode: str) -> str:
     """Return a consistent badge style for category tags."""
     if mode == "R":
         return "bold #ffffff on #b23a48"
+    if mode == "S":
+        return "bold #ffffff on #2f6db5"
     return "bold #0b1f0f on #5fbf72"
 
 
 def format_order_label(entry: OrderEntry) -> Text:
     """Render an order label with an optional colored mode tag."""
     text = Text()
-    if entry.mode in {"R", "G"}:
+    if entry.mode in {"R", "G", "S"}:
         text.append(entry.mode, style=badge_style(entry.mode))
         text.append(f" {entry.name}")
     else:

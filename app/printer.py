@@ -74,11 +74,42 @@ def _render_spacer(height_px: int) -> object:
     return Image.new("1", (PRINTER_WIDTH_PX, max(1, height_px)), color=1)
 
 
+def _render_section_separator() -> object:
+    from PIL import Image, ImageDraw
+
+    height = 10
+    img = Image.new("1", (PRINTER_WIDTH_PX, height), color=1)
+    draw = ImageDraw.Draw(img)
+    y = height // 2
+    draw.line((0, y, PRINTER_WIDTH_PX - 1, y), fill=0, width=1)
+    return img
+
+
+def _render_order_number_header(order_number: int, font: object) -> object:
+    from PIL import Image, ImageDraw
+
+    text = str(order_number)
+    canvas_height = max(26, PRINTER_FONT_SIZE - 24)
+    img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
+    draw = ImageDraw.Draw(img)
+
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+
+    text_x = max(0, PRINTER_WIDTH_PX - text_width)
+    text_y = max(0, (canvas_height - text_height) // 2)
+    draw.text((text_x, text_y), text, font=font, fill=0)
+    return img
+
+
 def _category_rank(mode: str | None) -> int:
     if mode == "G":
         return 0
     if mode == "R":
         return 1
+    if mode == "S":
+        return 3
     return 2
 
 
@@ -111,10 +142,12 @@ def _grouped_print_label(item: OrderEntry, count: int) -> str:
     return f"{base} │{count}"
 
 
-def print_order_batch(items: list[OrderEntry]) -> None:
+def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
         return
+    if not (1 <= order_number <= 1000):
+        raise ValueError("order_number must be between 1 and 1000")
 
     try:
         from escpos.printer import Usb
@@ -124,9 +157,16 @@ def print_order_batch(items: list[OrderEntry]) -> None:
 
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
     font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
+    header_font = ImageFont.truetype(PRINTER_FONT_PATH, max(20, PRINTER_FONT_SIZE - 20))
     grouped_items = _group_print_items(items)
+    printer.image(_render_order_number_header(order_number, header_font))
+    printed_s_separator = False
 
     for row in grouped_items:
+        if row.item.mode == "S" and not printed_s_separator:
+            printer.image(_render_section_separator())
+            printed_s_separator = True
+
         line = _grouped_print_label(row.item, row.count)
         img = _render_line(line, font)
         printer.image(img)

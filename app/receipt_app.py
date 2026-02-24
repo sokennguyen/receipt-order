@@ -17,6 +17,7 @@ from textual.widgets import Header, Static
 from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH, display_name_for_dish
 from app.models import MenuItem, OrderEntry
 from app.notes_modal import NotesModal
+from app.order_number_modal import OrderNumberModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
 from app.printer import check_printer_dependencies, print_order_batch
 from app.rendering import badge_style, format_note_tags, format_order_label
@@ -126,7 +127,7 @@ class ReceiptOrderApp(App):
         self._refresh_all()
 
     def on_key(self, event: Key) -> None:
-        if isinstance(self.screen, NotesModal):
+        if isinstance(self.screen, (NotesModal, OrderNumberModal)):
             return
 
         self._log_debug(
@@ -171,7 +172,7 @@ class ReceiptOrderApp(App):
                 event.stop()
                 return
 
-            if key not in {"g", "r"}:
+            if key not in {"g", "r", "s"}:
                 return
 
             self.mode = key.upper()
@@ -257,10 +258,24 @@ class ReceiptOrderApp(App):
             self._log_debug("submit_blocked reason=no_rows")
             return
 
-        batch = save_order_batch(self.registered_orders)
-        self._log_debug(f"submit_saved order_id={batch.order_id} rows={len(batch.items)}")
+        self.push_screen(OrderNumberModal(), self._on_order_number_selected)
+
+    def _on_order_number_selected(self, order_number: int | None) -> None:
+        if order_number is None:
+            self.system_status = "Submit canceled"
+            self._refresh_search()
+            self._log_debug("submit_canceled reason=no_order_number")
+            return
+        self._log_debug(f"submit_order_number_selected order_number={order_number}")
+        self._submit_with_order_number(order_number)
+
+    def _submit_with_order_number(self, order_number: int) -> None:
+        batch = save_order_batch(self.registered_orders, order_number)
+        self._log_debug(
+            f"submit_saved order_id={batch.order_id} order_number={batch.order_number} rows={len(batch.items)}"
+        )
         try:
-            print_order_batch(batch.items)
+            print_order_batch(batch.items, batch.order_number)
         except Exception as exc:
             update_order_status(batch.order_id, "PRINT_FAILED")
             self.system_status = f"Saved {batch.order_id[:8]} but print failed: {exc}"
@@ -421,7 +436,7 @@ class ReceiptOrderApp(App):
         bar = self.query_one("#search-bar", Static)
         if self.input_state == "normal":
             status = self.system_status or "Ready"
-            bar.update(f"Press R or G to search. Ctrl+S submit/print.\\n{status}")
+            bar.update(f"Press R, G, or S to search. Ctrl+S submit/print.\\n{status}")
             return
 
         shown_query = self.query or ""

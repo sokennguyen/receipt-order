@@ -123,6 +123,11 @@ DISH_META_BY_ID: dict[str, DishMeta] = {
     "seafood_ramyun": DishMeta(display_name="Seafood Ramyun", aliases=[], print_label="R-Sea"),
     "tofu_ramyun": DishMeta(display_name="Tofu Ramyun", aliases=["tofu", "vegtofu"]),
     "tteokbokki": DishMeta(display_name="Tteokbokki", aliases=[], print_label="T.T."),
+    "kimchi_side": DishMeta(display_name="Kimchi", aliases=[]),
+    "ssamjang_side": DishMeta(display_name="Ssamjang", aliases=[]),
+    "namu_side": DishMeta(display_name="Namu", aliases=[]),
+    "hot_side": DishMeta(display_name="Hot", aliases=[]),
+    "rice_side": DishMeta(display_name="Rice", aliases=[]),
 }
 
 
@@ -160,6 +165,13 @@ MENU_DISH_IDS_BY_MODE: dict[str, list[str]] = {
         "kimchi_ramyun",
         "seafood_ramyun",
         "tofu_ramyun",
+    ],
+    "S": [
+        "kimchi_side",
+        "ssamjang_side",
+        "namu_side",
+        "hot_side",
+        "rice_side",
     ],
 }
 

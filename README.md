@@ -27,12 +27,12 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 ### Normal mode
 
-- `R` / `G`: enter Ramyun or Gimbap search mode
+- `R` / `G` / `S`: enter Ramyun, Gimbap, or Side Dish search mode
 - `T`: add `Tteokbokki` directly to registered orders
 - `D`: delete selected order entry (selection stays at current spot)
 - `J` / `K`: move register selection next / previous (wraps)
 - `N`: open notes modal for selected register item
-- `Ctrl+S`: save current rows to SQLite and print them as one batch
+- `Ctrl+S`: open Order Number modal (1..1000), then save + print on confirm
 - `Ctrl+C`: no-op
 - `Ctrl+Q`: quit app
 
@@ -47,6 +47,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - Search supports shorthand aliases and punctuation-insensitive matching
   - examples: `s-tuna`, `stuna`, and `st` all match `S-Tuna Gimbap`
   - example: `chix` matches `Chicken Ramyun`
+  - Side Dish mode items: `Kimchi`, `Ssamjang`, `Namu`, `Hot`, `Rice`
 
 ### Notes modal
 
@@ -57,10 +58,14 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 ## Persistence / print flow
 
 - SQLite file path: `data/receipt.db`
-- Submit (`Ctrl+S`) writes `orders`, `order_items`, and `order_item_notes`
+- Submit (`Ctrl+S`) prompts for order number (1..1000); cancel aborts submit
+- Confirmed submit writes `orders` (including `order_number`), `order_items`, and `order_item_notes`
 - Print format:
+  - first line: right-aligned order number in smaller text
   - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
   - untagged rows: plain name unless a dish print override exists (example override: `T.T.` for `tteokbokki`)
   - duplicate rows are grouped by mode + dish + exact note set and shown with quantity suffix (example: `R-Classic │3`)
   - groups with notes print one indented line per note under the item line
+  - if Side Dish (`S`) groups exist, they print after a full-width separator line
+  - side dish labels are printed as plain names (no `S-` prefix)
 - If print fails after save, DB records remain (status becomes `PRINT_FAILED`)
