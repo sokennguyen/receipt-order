@@ -108,6 +108,7 @@ class ReceiptOrderApp(App):
         self.system_status = ""
         self.view_pending_g = False
         self.next_group_id = 1
+        self._bulk_note_targets: list[OrderEntry] | None = None
         self._debug_log_path = Path("/tmp/receipt-debug.log")
         self._log_debug("app_init")
 
@@ -155,6 +156,21 @@ class ReceiptOrderApp(App):
                 event.stop()
                 return
             if event.is_printable and event.character and len(event.character) == 1:
+                if event.character == "N":
+                    self._clear_view_pending_g()
+                    self._open_notes_for_view_selection()
+                    event.stop()
+                    return
+                if event.character == "J":
+                    self._clear_view_pending_g()
+                    self._reorder_view_selection_block(1)
+                    event.stop()
+                    return
+                if event.character == "K":
+                    self._clear_view_pending_g()
+                    self._reorder_view_selection_block(-1)
+                    event.stop()
+                    return
                 if event.character == "C":
                     self._clear_view_pending_g()
                     self._ungroup_selected_group()
@@ -171,6 +187,16 @@ class ReceiptOrderApp(App):
                 if key == "c":
                     self._clear_view_pending_g()
                     self._group_selected_rows()
+                    event.stop()
+                    return
+                if key == "d":
+                    self._clear_view_pending_g()
+                    self._delete_view_selected_rows()
+                    event.stop()
+                    return
+                if key == "n":
+                    self._clear_view_pending_g()
+                    self._open_notes_for_view_selection()
                     event.stop()
                     return
                 if key == "g":
@@ -237,6 +263,16 @@ class ReceiptOrderApp(App):
 
             if key == "d":
                 self._delete_selected_order()
+                event.stop()
+                return
+
+            if event.character == "J":
+                self._reorder_selected_row(1)
+                event.stop()
+                return
+
+            if event.character == "K":
+                self._reorder_selected_row(-1)
                 event.stop()
                 return
 
@@ -435,6 +471,60 @@ class ReceiptOrderApp(App):
             self.order_selected_index = (self.order_selected_index + delta) % len(self.registered_orders)
         self._refresh_orders()
 
+    def _reorder_selected_row(self, delta: int) -> None:
+        if len(self.registered_orders) < 2:
+            return
+
+        if self.order_selected_index is None:
+            self.order_selected_index = 0
+            self._refresh_orders()
+            return
+
+        src = self.order_selected_index
+        if not (0 <= src < len(self.registered_orders)):
+            return
+
+        dst = src + delta
+        if not (0 <= dst < len(self.registered_orders)):
+            return
+
+        self.registered_orders[src], self.registered_orders[dst] = (
+            self.registered_orders[dst],
+            self.registered_orders[src],
+        )
+        self.order_selected_index = dst
+        self._refresh_orders()
+
+    def _reorder_view_selection_block(self, delta: int) -> None:
+        if not self.view_mode_active or len(self.registered_orders) < 2:
+            return
+        bounds = self._view_range_bounds()
+        if bounds is None:
+            return
+        start, end = bounds
+        dst_start = start + delta
+        dst_end = end + delta
+        if dst_start < 0 or dst_end >= len(self.registered_orders):
+            self._log_debug(
+                f"view_reorder_noop reason=boundary start={start} end={end} delta={delta}"
+            )
+            return
+
+        block = self.registered_orders[start : end + 1]
+        del self.registered_orders[start : end + 1]
+        insert_at = start + 1 if delta > 0 else start - 1
+        self.registered_orders[insert_at:insert_at] = block
+
+        if self.view_anchor_index is not None:
+            self.view_anchor_index += delta
+        if self.view_cursor_index is not None:
+            self.view_cursor_index += delta
+        self.order_selected_index = self.view_cursor_index
+        self._refresh_orders()
+        self._log_debug(
+            f"view_reorder_ok start={start} end={end} delta={delta} new_start={start + delta} new_end={end + delta}"
+        )
+
     def _is_group_row(self, row: RegisterRow) -> bool:
         return isinstance(row, RegisterGroup)
 
@@ -565,20 +655,91 @@ class ReceiptOrderApp(App):
 
         self._refresh_orders()
 
+    def _delete_view_selected_rows(self) -> None:
+        if not self.view_mode_active or not self.registered_orders:
+            return
+        bounds = self._view_range_bounds()
+        if bounds is None:
+            return
+        start, end = bounds
+        if not (0 <= start <= end < len(self.registered_orders)):
+            return
+
+        deleted_rows = self.registered_orders[start : end + 1]
+        deleted_group_ids = sorted(
+            {row.group_id for row in deleted_rows if isinstance(row, RegisterGroup)}
+        )
+        del self.registered_orders[start : end + 1]
+
+        if deleted_group_ids:
+            for group_id in deleted_group_ids:
+                self._close_group_id_gap(group_id)
+        else:
+            self._recompute_next_group_id()
+
+        if not self.registered_orders:
+            self.order_selected_index = None
+            self.view_anchor_index = None
+            self.view_cursor_index = None
+            self._refresh_orders()
+            return
+
+        next_idx = min(start, len(self.registered_orders) - 1)
+        self.order_selected_index = next_idx
+        self.view_anchor_index = next_idx
+        self.view_cursor_index = next_idx
+        self._refresh_orders()
+
     def _selected_order(self) -> OrderEntry | None:
         row = self._selected_row()
         if row is None or isinstance(row, RegisterGroup):
             return None
         return row
 
+    def _view_selected_plain_items(self) -> list[OrderEntry]:
+        bounds = self._view_range_bounds()
+        if bounds is None:
+            return []
+        start, end = bounds
+        if not (0 <= start <= end < len(self.registered_orders)):
+            return []
+
+        items: list[OrderEntry] = []
+        for row in self.registered_orders[start : end + 1]:
+            if isinstance(row, RegisterGroup):
+                return []
+            items.append(row)
+        return items
+
+    def _can_open_view_notes(self, items: list[OrderEntry]) -> bool:
+        if not items:
+            return False
+        first = items[0]
+        return all(item.dish_id == first.dish_id and item.selected_notes == first.selected_notes for item in items)
+
     def _open_notes_for_selected_order(self) -> None:
         entry = self._selected_order()
         if entry is None:
             return
+        self._bulk_note_targets = None
         self.ui_mode = "MODAL"
         self.push_screen(NotesModal(entry, on_change=self._on_notes_modal_change))
 
+    def _open_notes_for_view_selection(self) -> None:
+        items = self._view_selected_plain_items()
+        if not self._can_open_view_notes(items):
+            self._bulk_note_targets = None
+            return
+        self._bulk_note_targets = items
+        self.ui_mode = "MODAL"
+        self.push_screen(NotesModal(items[0], on_change=self._on_notes_modal_change))
+
     def _on_notes_modal_change(self) -> None:
+        if self._bulk_note_targets:
+            source_notes = set(self._bulk_note_targets[0].selected_notes)
+            for item in self._bulk_note_targets[1:]:
+                item.selected_notes = set(source_notes)
+        self._bulk_note_targets = None
         self._sync_ui_mode()
         self._refresh_orders()
 

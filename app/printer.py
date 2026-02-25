@@ -226,7 +226,11 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
 
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
     font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
-    compact_font = ImageFont.truetype(PRINTER_FONT_PATH, max(14, PRINTER_FONT_SIZE - 16))
+    # Group-allocation line should be much smaller than item lines.
+    # Set it to half of the current compact size.
+    compact_base_size = max(14, PRINTER_FONT_SIZE - 16)
+    compact_font_size = max(10, int(round(compact_base_size * (1 / 3))))
+    compact_font = ImageFont.truetype(PRINTER_FONT_PATH, compact_font_size)
     header_font = ImageFont.truetype(PRINTER_FONT_PATH, max(20, PRINTER_FONT_SIZE - 20))
     grouped_items = _group_print_items(items)
     printer.image(_render_order_number_header(order_number, header_font))
@@ -241,7 +245,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
         img = _render_line(line, font)
         printer.image(img)
 
-        if row.count >= 2 and row.group_allocations:
+        if row.group_allocations:
             allocation = _group_allocation_line(row.group_allocations)
             if allocation:
                 printer.image(_render_compact_line(f"    {allocation}", compact_font))
