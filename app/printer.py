@@ -113,16 +113,20 @@ def _render_order_number_header(order_number: int, font: object) -> object:
     from PIL import Image, ImageDraw
 
     text = str(order_number)
-    canvas_height = max(26, PRINTER_FONT_SIZE - 24)
+    probe = Image.new("1", (1, 1), color=1)
+    probe_draw = ImageDraw.Draw(probe)
+    text_bbox = probe_draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+    top_padding = 4
+    bottom_padding = 12
+    canvas_height = max(26, text_height + top_padding + bottom_padding)
+
     img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
     draw = ImageDraw.Draw(img)
 
-    text_bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = text_bbox[2] - text_bbox[0]
-    text_height = text_bbox[3] - text_bbox[1]
-
-    text_x = max(0, PRINTER_WIDTH_PX - text_width)
-    text_y = max(0, (canvas_height - text_height) // 2)
+    text_x = PRINTER_WIDTH_PX - text_width - text_bbox[0]
+    text_y = top_padding - text_bbox[1]
     draw.text((text_x, text_y), text, font=font, fill=0)
     return img
 
