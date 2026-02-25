@@ -38,6 +38,11 @@ class ReceiptOrderApp(App):
         height: 1fr;
     }
 
+    #mode-footer {
+        height: 1;
+        padding: 0 1;
+    }
+
     #orders-pane {
         width: 3fr;
         border: round $primary;
@@ -101,6 +106,7 @@ class ReceiptOrderApp(App):
         super().__init__()
         self.registered_orders: list[OrderEntry] = []
         self.system_status = ""
+        self.view_pending_g = False
         self._debug_log_path = Path("/tmp/receipt-debug.log")
         self._log_debug("app_init")
 
@@ -123,6 +129,7 @@ class ReceiptOrderApp(App):
             with Vertical(id="search-pane"):
                 yield Static(id="search-bar")
                 yield Static(id="results")
+        yield Static(id="mode-footer")
 
     def on_mount(self) -> None:
         bootstrap_schema()
@@ -147,15 +154,35 @@ class ReceiptOrderApp(App):
                 event.stop()
                 return
             if event.is_printable and event.character and len(event.character) == 1:
+                if event.character == "G":
+                    self._clear_view_pending_g()
+                    self._jump_view_cursor_to_bottom()
+                    self._log_debug("view_mode_jump_bottom_G")
+                    event.stop()
+                    return
+
                 key = event.character.lower()
+                if key == "g":
+                    if self.view_pending_g:
+                        self._clear_view_pending_g()
+                        self._jump_view_cursor_to_top()
+                        self._log_debug("view_mode_jump_top_gg")
+                    else:
+                        self.view_pending_g = True
+                        self._log_debug("view_mode_g_pending")
+                    event.stop()
+                    return
                 if key == "j":
+                    self._clear_view_pending_g()
                     self._move_view_cursor(1)
                     event.stop()
                     return
                 if key == "k":
+                    self._clear_view_pending_g()
                     self._move_view_cursor(-1)
                     event.stop()
                     return
+            self._clear_view_pending_g()
             event.stop()
             return
 
@@ -360,6 +387,22 @@ class ReceiptOrderApp(App):
     def _refresh_all(self) -> None:
         self._refresh_orders()
         self._refresh_search()
+        self._refresh_footer()
+
+    def watch_ui_mode(self, _new_mode: str) -> None:
+        self._refresh_footer()
+
+    def watch_mode(self, _new_mode: str) -> None:
+        if self.ui_mode == "SEARCH":
+            self._refresh_footer()
+
+    def _search_mode_label(self) -> str:
+        labels = {
+            "R": "Ramyun",
+            "G": "Gimbap",
+            "S": "Sides",
+        }
+        return labels.get(self.mode, self.mode)
 
     def _move_order_selection(self, delta: int) -> None:
         if not self.registered_orders:
@@ -427,6 +470,7 @@ class ReceiptOrderApp(App):
             self.order_selected_index = 0
 
         self.view_mode_active = True
+        self.view_pending_g = False
         self.view_selection_kind = "CHAR"
         self.view_anchor_index = self.order_selected_index
         self.view_cursor_index = self.order_selected_index
@@ -442,6 +486,7 @@ class ReceiptOrderApp(App):
         if self.view_cursor_index is not None and 0 <= self.view_cursor_index < len(self.registered_orders):
             self.order_selected_index = self.view_cursor_index
         self.view_mode_active = False
+        self.view_pending_g = False
         self.view_anchor_index = None
         self.view_cursor_index = None
         self.view_selection_kind = "CHAR"
@@ -457,6 +502,25 @@ class ReceiptOrderApp(App):
         self.view_cursor_index = max(0, min(len(self.registered_orders) - 1, self.view_cursor_index + delta))
         self.order_selected_index = self.view_cursor_index
         self._refresh_orders()
+
+    def _jump_view_cursor_to_top(self) -> None:
+        if not self.registered_orders:
+            return
+        self.view_cursor_index = 0
+        self.order_selected_index = self.view_cursor_index
+        self._refresh_orders()
+
+    def _jump_view_cursor_to_bottom(self) -> None:
+        if not self.registered_orders:
+            return
+        self.view_cursor_index = len(self.registered_orders) - 1
+        self.order_selected_index = self.view_cursor_index
+        self._refresh_orders()
+
+    def _clear_view_pending_g(self) -> None:
+        if self.view_pending_g:
+            self.view_pending_g = False
+            self._log_debug("view_mode_g_cleared")
 
     def _view_range_bounds(self) -> tuple[int, int] | None:
         if not self.view_mode_active:
@@ -497,6 +561,7 @@ class ReceiptOrderApp(App):
         if not self.registered_orders:
             if self.view_mode_active:
                 self.view_mode_active = False
+                self.view_pending_g = False
                 self.view_anchor_index = None
                 self.view_cursor_index = None
                 self.view_selection_kind = "CHAR"
@@ -594,3 +659,13 @@ class ReceiptOrderApp(App):
             lines.append("\n⋮", style="dim")
 
         results_widget.update(lines)
+
+    def _refresh_footer(self) -> None:
+        try:
+            footer = self.query_one("#mode-footer", Static)
+        except NoMatches:
+            return
+        if self.ui_mode == "SEARCH":
+            footer.update(f"Mode: SEARCH ({self._search_mode_label()})")
+            return
+        footer.update(f"Mode: {self.ui_mode}")

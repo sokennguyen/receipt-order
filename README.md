@@ -31,7 +31,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `T`: add `Tteokbokki` directly to registered orders
 - `D`: delete selected order entry (selection stays at current spot)
 - `J` / `K`: move register selection next / previous (wraps)
-- `V`: enter register View mode (range highlight); `J/K` adjusts range, `Esc/q/Ctrl+C` exits
+- `V`: enter register View mode (range highlight); `J/K` adjusts range, `gg` jumps to first row, `G` jumps to last row, `Esc/q/Ctrl+C` exits
 - `Shift+V`: reserved for future linewise View mode (not implemented yet)
 - `N`: open notes modal for selected register item
 - `Ctrl+S`: open Order Number modal (1..1000), then save + print on confirm
