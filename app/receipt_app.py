@@ -257,6 +257,7 @@ class ReceiptOrderApp(App):
             if key == "t":
                 self.registered_orders.append(OrderEntry(dish_id="tteokbokki", name=display_name_for_dish("tteokbokki")))
                 self.order_selected_index = len(self.registered_orders) - 1
+                self.order_selected_member_index = None
                 self._refresh_orders()
                 event.stop()
                 return
@@ -347,6 +348,7 @@ class ReceiptOrderApp(App):
         item = results[self.selected_index]
         self.registered_orders.append(OrderEntry(dish_id=item.dish_id, name=item.name, mode=self.mode))
         self.order_selected_index = len(self.registered_orders) - 1
+        self.order_selected_member_index = None
         self._refresh_orders()
 
     def action_backspace_query(self) -> None:
@@ -410,6 +412,7 @@ class ReceiptOrderApp(App):
         update_order_status(batch.order_id, "PRINTED")
         self.registered_orders.clear()
         self.order_selected_index = None
+        self.order_selected_member_index = None
         self.next_group_id = 1
         self.system_status = f"Saved + printed: {batch.order_id[:8]}"
         self._refresh_orders()
@@ -465,11 +468,53 @@ class ReceiptOrderApp(App):
         if not self.registered_orders:
             return
 
-        if self.order_selected_index is None:
-            self.order_selected_index = 0 if delta > 0 else len(self.registered_orders) - 1
+        path = self._selection_path_list()
+        if not path:
+            return
+        current_path_idx = self._current_selection_path_index(path)
+        if current_path_idx is None:
+            current_path_idx = 0 if delta > 0 else len(path) - 1
         else:
-            self.order_selected_index = (self.order_selected_index + delta) % len(self.registered_orders)
+            current_path_idx = (current_path_idx + delta) % len(path)
+        self._set_selection_path(path[current_path_idx])
         self._refresh_orders()
+
+    def _selection_path_list(self) -> list[tuple[int, int | None]]:
+        path: list[tuple[int, int | None]] = []
+        for idx, row in enumerate(self.registered_orders):
+            path.append((idx, None))
+            if isinstance(row, RegisterGroup):
+                for member_idx in range(len(row.members)):
+                    path.append((idx, member_idx))
+        return path
+
+    def _current_selection_path_index(self, path: list[tuple[int, int | None]]) -> int | None:
+        if self.order_selected_index is None:
+            return None
+        current = (self.order_selected_index, self.order_selected_member_index)
+        try:
+            return path.index(current)
+        except ValueError:
+            fallback = (self.order_selected_index, None)
+            try:
+                return path.index(fallback)
+            except ValueError:
+                return None
+
+    def _set_selection_path(self, path_entry: tuple[int, int | None]) -> None:
+        self.order_selected_index, self.order_selected_member_index = path_entry
+
+    def _selected_group_and_member(self) -> tuple[RegisterGroup, int] | None:
+        if self.order_selected_index is None or self.order_selected_member_index is None:
+            return None
+        if not (0 <= self.order_selected_index < len(self.registered_orders)):
+            return None
+        row = self.registered_orders[self.order_selected_index]
+        if not isinstance(row, RegisterGroup):
+            return None
+        if not (0 <= self.order_selected_member_index < len(row.members)):
+            return None
+        return (row, self.order_selected_member_index)
 
     def _reorder_selected_row(self, delta: int) -> None:
         if len(self.registered_orders) < 2:
@@ -477,6 +522,7 @@ class ReceiptOrderApp(App):
 
         if self.order_selected_index is None:
             self.order_selected_index = 0
+            self.order_selected_member_index = None
             self._refresh_orders()
             return
 
@@ -493,6 +539,7 @@ class ReceiptOrderApp(App):
             self.registered_orders[src],
         )
         self.order_selected_index = dst
+        self.order_selected_member_index = None
         self._refresh_orders()
 
     def _reorder_view_selection_block(self, delta: int) -> None:
@@ -597,6 +644,8 @@ class ReceiptOrderApp(App):
     def _ungroup_selected_group(self) -> None:
         if not self.registered_orders:
             return
+        if self.order_selected_member_index is not None:
+            return
         idx = self.order_selected_index
         if idx is None or not (0 <= idx < len(self.registered_orders)):
             return
@@ -608,6 +657,7 @@ class ReceiptOrderApp(App):
         self.registered_orders[idx : idx + 1] = members
         self._close_group_id_gap(row.group_id)
         self.order_selected_index = idx
+        self.order_selected_member_index = None
         if self.view_mode_active:
             self.view_anchor_index = idx
             self.view_cursor_index = idx
@@ -634,9 +684,32 @@ class ReceiptOrderApp(App):
         if not self.registered_orders or self.order_selected_index is None:
             return
 
+        selected_group_member = self._selected_group_and_member()
+        if selected_group_member is not None:
+            group, member_idx = selected_group_member
+            del group.members[member_idx]
+            if group.members:
+                self.order_selected_member_index = min(member_idx, len(group.members) - 1)
+                self._refresh_orders()
+                return
+            # Empty group behaves like deleting the group header itself.
+            idx = self.order_selected_index
+            deleted_group_id = group.group_id
+            del self.registered_orders[idx]
+            self._close_group_id_gap(deleted_group_id)
+            if not self.registered_orders:
+                self.order_selected_index = None
+                self.order_selected_member_index = None
+            else:
+                self.order_selected_index = min(idx, len(self.registered_orders) - 1)
+                self.order_selected_member_index = None
+            self._refresh_orders()
+            return
+
         idx = self.order_selected_index
         if not (0 <= idx < len(self.registered_orders)):
             self.order_selected_index = None
+            self.order_selected_member_index = None
             self._refresh_orders()
             return
 
@@ -650,13 +723,55 @@ class ReceiptOrderApp(App):
 
         if not self.registered_orders:
             self.order_selected_index = None
+            self.order_selected_member_index = None
         else:
             self.order_selected_index = min(idx, len(self.registered_orders) - 1)
+            self.order_selected_member_index = None
 
         self._refresh_orders()
 
     def _delete_view_selected_rows(self) -> None:
         if not self.view_mode_active or not self.registered_orders:
+            return
+        did_delete = False
+        if self.view_group_locked:
+            if self.order_selected_member_index is None:
+                self._delete_selected_order()
+                self._exit_view_mode()
+                return
+            if self.view_group_row_index is None or not (0 <= self.view_group_row_index < len(self.registered_orders)):
+                return
+            row = self.registered_orders[self.view_group_row_index]
+            if not isinstance(row, RegisterGroup):
+                return
+            bounds = self._view_member_range_bounds()
+            if bounds is None:
+                return
+            start, end = bounds
+            if not (0 <= start <= end < len(row.members)):
+                return
+            del row.members[start : end + 1]
+            did_delete = True
+            if row.members:
+                next_member = min(start, len(row.members) - 1)
+                self.view_member_anchor_index = next_member
+                self.view_member_cursor_index = next_member
+                self.order_selected_index = self.view_group_row_index
+                self.order_selected_member_index = next_member
+                self._refresh_orders()
+                self._exit_view_mode()
+                return
+            # Group emptied: remove group and fall back to normal mode selection.
+            removed_group_id = row.group_id
+            del self.registered_orders[self.view_group_row_index]
+            self._close_group_id_gap(removed_group_id)
+            if not self.registered_orders:
+                self.order_selected_index = None
+                self.order_selected_member_index = None
+            else:
+                self.order_selected_index = min(self.view_group_row_index, len(self.registered_orders) - 1)
+                self.order_selected_member_index = None
+            self._exit_view_mode()
             return
         bounds = self._view_range_bounds()
         if bounds is None:
@@ -670,6 +785,7 @@ class ReceiptOrderApp(App):
             {row.group_id for row in deleted_rows if isinstance(row, RegisterGroup)}
         )
         del self.registered_orders[start : end + 1]
+        did_delete = True
 
         if deleted_group_ids:
             for group_id in deleted_group_ids:
@@ -679,6 +795,7 @@ class ReceiptOrderApp(App):
 
         if not self.registered_orders:
             self.order_selected_index = None
+            self.order_selected_member_index = None
             self.view_anchor_index = None
             self.view_cursor_index = None
             self._refresh_orders()
@@ -686,17 +803,40 @@ class ReceiptOrderApp(App):
 
         next_idx = min(start, len(self.registered_orders) - 1)
         self.order_selected_index = next_idx
+        self.order_selected_member_index = None
         self.view_anchor_index = next_idx
         self.view_cursor_index = next_idx
         self._refresh_orders()
+        if did_delete:
+            self._exit_view_mode()
 
     def _selected_order(self) -> OrderEntry | None:
+        selected_group_member = self._selected_group_and_member()
+        if selected_group_member is not None:
+            group, member_idx = selected_group_member
+            return group.members[member_idx]
         row = self._selected_row()
         if row is None or isinstance(row, RegisterGroup):
             return None
         return row
 
     def _view_selected_plain_items(self) -> list[OrderEntry]:
+        if self.view_group_locked:
+            if self.view_group_row_index is None:
+                return []
+            if not (0 <= self.view_group_row_index < len(self.registered_orders)):
+                return []
+            row = self.registered_orders[self.view_group_row_index]
+            if not isinstance(row, RegisterGroup):
+                return []
+            bounds = self._view_member_range_bounds()
+            if bounds is None:
+                return []
+            start, end = bounds
+            if not (0 <= start <= end < len(row.members)):
+                return []
+            return list(row.members[start : end + 1])
+
         bounds = self._view_range_bounds()
         if bounds is None:
             return []
@@ -726,6 +866,10 @@ class ReceiptOrderApp(App):
         self.push_screen(NotesModal(entry, on_change=self._on_notes_modal_change))
 
     def _open_notes_for_view_selection(self) -> None:
+        if self.view_group_locked and self.order_selected_member_index is None:
+            # Group header in fallback path: no-op notes.
+            self._bulk_note_targets = None
+            return
         items = self._view_selected_plain_items()
         if not self._can_open_view_notes(items):
             self._bulk_note_targets = None
@@ -735,11 +879,15 @@ class ReceiptOrderApp(App):
         self.push_screen(NotesModal(items[0], on_change=self._on_notes_modal_change))
 
     def _on_notes_modal_change(self) -> None:
+        was_bulk_notes = bool(self._bulk_note_targets)
         if self._bulk_note_targets:
             source_notes = set(self._bulk_note_targets[0].selected_notes)
             for item in self._bulk_note_targets[1:]:
                 item.selected_notes = set(source_notes)
         self._bulk_note_targets = None
+        if was_bulk_notes and self.view_mode_active:
+            self._exit_view_mode()
+            return
         self._sync_ui_mode()
         self._refresh_orders()
 
@@ -753,6 +901,25 @@ class ReceiptOrderApp(App):
         else:
             self.ui_mode = "NORMAL"
 
+    def _normalize_selection_state(self) -> None:
+        if self.order_selected_index is None:
+            self.order_selected_member_index = None
+            return
+        if not (0 <= self.order_selected_index < len(self.registered_orders)):
+            self.order_selected_index = None
+            self.order_selected_member_index = None
+            return
+        row = self.registered_orders[self.order_selected_index]
+        if not isinstance(row, RegisterGroup):
+            self.order_selected_member_index = None
+            return
+        if self.order_selected_member_index is None:
+            return
+        if not row.members:
+            self.order_selected_member_index = None
+            return
+        self.order_selected_member_index = max(0, min(len(row.members) - 1, self.order_selected_member_index))
+
     def _enter_view_mode(self) -> None:
         if self.input_state != "normal":
             return
@@ -764,8 +931,26 @@ class ReceiptOrderApp(App):
         self.view_mode_active = True
         self.view_pending_g = False
         self.view_selection_kind = "CHAR"
-        self.view_anchor_index = self.order_selected_index
-        self.view_cursor_index = self.order_selected_index
+        self.view_group_locked = False
+        self.view_group_row_index = None
+        self.view_member_anchor_index = None
+        self.view_member_cursor_index = None
+        if self.order_selected_member_index is not None:
+            row = self.registered_orders[self.order_selected_index]
+            if isinstance(row, RegisterGroup) and 0 <= self.order_selected_member_index < len(row.members):
+                self.view_group_locked = True
+                self.view_group_row_index = self.order_selected_index
+                self.view_member_anchor_index = self.order_selected_member_index
+                self.view_member_cursor_index = self.order_selected_member_index
+                self.view_anchor_index = None
+                self.view_cursor_index = None
+            else:
+                self.order_selected_member_index = None
+                self.view_anchor_index = self.order_selected_index
+                self.view_cursor_index = self.order_selected_index
+        else:
+            self.view_anchor_index = self.order_selected_index
+            self.view_cursor_index = self.order_selected_index
         self._sync_ui_mode()
         self._refresh_orders()
         self._log_debug(
@@ -775,10 +960,19 @@ class ReceiptOrderApp(App):
     def _exit_view_mode(self) -> None:
         if not self.view_mode_active:
             return
-        if self.view_cursor_index is not None and 0 <= self.view_cursor_index < len(self.registered_orders):
+        if self.view_group_locked:
+            if self.view_group_row_index is not None and 0 <= self.view_group_row_index < len(self.registered_orders):
+                self.order_selected_index = self.view_group_row_index
+                self.order_selected_member_index = self.view_member_cursor_index
+        elif self.view_cursor_index is not None and 0 <= self.view_cursor_index < len(self.registered_orders):
             self.order_selected_index = self.view_cursor_index
+            self.order_selected_member_index = None
         self.view_mode_active = False
         self.view_pending_g = False
+        self.view_group_locked = False
+        self.view_group_row_index = None
+        self.view_member_anchor_index = None
+        self.view_member_cursor_index = None
         self.view_anchor_index = None
         self.view_cursor_index = None
         self.view_selection_kind = "CHAR"
@@ -789,24 +983,44 @@ class ReceiptOrderApp(App):
     def _move_view_cursor(self, delta: int) -> None:
         if not self.view_mode_active or not self.registered_orders:
             return
+        if self.view_group_locked:
+            if self.view_group_row_index is None or not (0 <= self.view_group_row_index < len(self.registered_orders)):
+                return
+            row = self.registered_orders[self.view_group_row_index]
+            if not isinstance(row, RegisterGroup) or not row.members:
+                return
+            if self.view_member_cursor_index is None:
+                self.view_member_cursor_index = 0
+            self.view_member_cursor_index = max(0, min(len(row.members) - 1, self.view_member_cursor_index + delta))
+            self.order_selected_index = self.view_group_row_index
+            self.order_selected_member_index = self.view_member_cursor_index
+            self._refresh_orders()
+            return
         if self.view_cursor_index is None:
             self.view_cursor_index = self.order_selected_index if self.order_selected_index is not None else 0
         self.view_cursor_index = max(0, min(len(self.registered_orders) - 1, self.view_cursor_index + delta))
         self.order_selected_index = self.view_cursor_index
+        self.order_selected_member_index = None
         self._refresh_orders()
 
     def _jump_view_cursor_to_top(self) -> None:
         if not self.registered_orders:
             return
+        if self.view_group_locked:
+            return
         self.view_cursor_index = 0
         self.order_selected_index = self.view_cursor_index
+        self.order_selected_member_index = None
         self._refresh_orders()
 
     def _jump_view_cursor_to_bottom(self) -> None:
         if not self.registered_orders:
             return
+        if self.view_group_locked:
+            return
         self.view_cursor_index = len(self.registered_orders) - 1
         self.order_selected_index = self.view_cursor_index
+        self.order_selected_member_index = None
         self._refresh_orders()
 
     def _clear_view_pending_g(self) -> None:
@@ -815,11 +1029,21 @@ class ReceiptOrderApp(App):
             self._log_debug("view_mode_g_cleared")
 
     def _view_range_bounds(self) -> tuple[int, int] | None:
-        if not self.view_mode_active:
+        if not self.view_mode_active or self.view_group_locked:
             return None
         if self.view_anchor_index is None or self.view_cursor_index is None:
             return None
         return (min(self.view_anchor_index, self.view_cursor_index), max(self.view_anchor_index, self.view_cursor_index))
+
+    def _view_member_range_bounds(self) -> tuple[int, int] | None:
+        if not self.view_mode_active or not self.view_group_locked:
+            return None
+        if self.view_member_anchor_index is None or self.view_member_cursor_index is None:
+            return None
+        return (
+            min(self.view_member_anchor_index, self.view_member_cursor_index),
+            max(self.view_member_anchor_index, self.view_member_cursor_index),
+        )
 
     def _visible_rows(self, widget: Static) -> int:
         height = widget.size.height
@@ -865,24 +1089,39 @@ class ReceiptOrderApp(App):
             if self.view_mode_active:
                 self.view_mode_active = False
                 self.view_pending_g = False
+                self.view_group_locked = False
+                self.view_group_row_index = None
+                self.view_member_anchor_index = None
+                self.view_member_cursor_index = None
                 self.view_anchor_index = None
                 self.view_cursor_index = None
                 self.view_selection_kind = "CHAR"
                 self._sync_ui_mode()
             self.order_selected_index = None
+            self.order_selected_member_index = None
             orders_widget.update("(no items yet)")
             return
 
         if self.order_selected_index is not None and self.order_selected_index >= len(self.registered_orders):
             self.order_selected_index = len(self.registered_orders) - 1
+        self._normalize_selection_state()
 
         visible_rows = self._visible_rows(orders_widget)
         start, end = self._window_bounds(len(self.registered_orders), visible_rows, self.order_selected_index)
         view_bounds = self._view_range_bounds()
+        view_member_bounds = self._view_member_range_bounds()
 
         lines = Text()
         if start > 0:
             lines.append("⋮\n", style="dim")
+
+        item_display_index_by_row: dict[int, int] = {}
+        running_item_index = 0
+        for row_idx, row_obj in enumerate(self.registered_orders):
+            if isinstance(row_obj, RegisterGroup):
+                continue
+            running_item_index += 1
+            item_display_index_by_row[row_idx] = running_item_index
 
         for idx in range(start, end):
             if idx > start:
@@ -891,29 +1130,52 @@ class ReceiptOrderApp(App):
             row_start = len(lines)
             row = self.registered_orders[idx]
             if isinstance(row, RegisterGroup):
-                global_prefix = f"{idx + 1}. "
-                group_col = str(row.group_id)
-                first_left = f"{global_prefix}{group_col} │ "
-                rest_left = f"{' ' * len(global_prefix)}{' ' * len(group_col)} │ "
+                header_start = len(lines)
+                lines.append(f"g{row.group_id}")
+                header_end = len(lines)
+                member_blocks: list[tuple[int, int, int]] = []
                 for member_idx, member in enumerate(row.members):
-                    if member_idx > 0:
-                        lines.append("\n")
-                    left = first_left if member_idx == 0 else rest_left
-                    member_prefix = f"{left}{member_idx + 1}. "
+                    lines.append("\n")
+                    member_start = len(lines)
+                    member_prefix = f"  {member_idx + 1}. "
                     self._append_item_with_notes(lines, member, member_prefix, " " * len(member_prefix))
+                    member_end = len(lines)
+                    member_blocks.append((member_idx, member_start, member_end))
             else:
-                prefix = f"{idx + 1}. "
+                display_idx = item_display_index_by_row.get(idx, idx + 1)
+                prefix = f"{display_idx}. "
                 self._append_item_with_notes(lines, row, prefix, " " * len(prefix))
 
-            is_selected = False
-            if view_bounds is not None:
-                is_selected = view_bounds[0] <= idx <= view_bounds[1]
+            row_end = len(lines)
+            if isinstance(row, RegisterGroup):
+                if self.view_group_locked and self.view_group_row_index == idx and view_member_bounds is not None:
+                    selected_member_idx = self.order_selected_member_index
+                    if selected_member_idx is None:
+                        lines.stylize("reverse", header_start, header_end)
+                    else:
+                        start_m, end_m = view_member_bounds
+                        for member_idx, m_start, m_end in member_blocks:
+                            if start_m <= member_idx <= end_m:
+                                lines.stylize("reverse", m_start, m_end)
+                elif view_bounds is not None:
+                    if view_bounds[0] <= idx <= view_bounds[1]:
+                        lines.stylize("reverse", row_start, row_end)
+                elif idx == self.order_selected_index:
+                    if self.order_selected_member_index is None:
+                        lines.stylize("reverse", header_start, header_end)
+                    else:
+                        for member_idx, m_start, m_end in member_blocks:
+                            if member_idx == self.order_selected_member_index:
+                                lines.stylize("reverse", m_start, m_end)
+                                break
             else:
-                is_selected = idx == self.order_selected_index
-
-            if is_selected:
-                row_end = len(lines)
-                lines.stylize("reverse", row_start, row_end)
+                is_selected = False
+                if view_bounds is not None:
+                    is_selected = view_bounds[0] <= idx <= view_bounds[1]
+                else:
+                    is_selected = idx == self.order_selected_index
+                if is_selected:
+                    lines.stylize("reverse", row_start, row_end)
 
         if end < len(self.registered_orders):
             lines.append("\n⋮", style="dim")
