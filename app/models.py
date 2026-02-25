@@ -21,3 +21,14 @@ class OrderEntry:
     name: str
     mode: str | None = None
     selected_notes: set[str] = field(default_factory=set)
+
+
+@dataclass
+class RegisterGroup:
+    """A top-level register group containing multiple order rows."""
+
+    group_id: int
+    members: list[OrderEntry]
+
+
+RegisterRow = OrderEntry | RegisterGroup

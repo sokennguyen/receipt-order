@@ -33,6 +33,8 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `J` / `K`: move register selection next / previous (wraps)
 - `V`: enter register View mode (range highlight); `J/K` adjusts range, `gg` jumps to first row, `G` jumps to last row, `Esc/q/Ctrl+C` exits
 - `Shift+V`: reserved for future linewise View mode (not implemented yet)
+- `C`: group selected register row(s) into one customer group (view-range or single row)
+- `Shift+C`: ungroup selected customer group row
 - `N`: open notes modal for selected register item
 - `Ctrl+S`: open Order Number modal (1..1000), then save + print on confirm
 - `Ctrl+C`: no-op
@@ -67,6 +69,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
   - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
   - untagged rows: plain name unless a dish print override exists (example override: `T.T.` for `tteokbokki`)
   - duplicate rows are grouped by mode + dish + exact note set and shown with quantity suffix (example: `R-Classic │3`)
+  - duplicate rows with manually grouped members include one compact allocation line (example: `1 2x2`)
   - groups with notes print one indented line per note under the item line
   - spicy note aliases are symbol-only: `☆`, `☆☆`, `♥`, `♥♥`
   - if Side Dish (`S`) groups exist, they print after a full-width separator line

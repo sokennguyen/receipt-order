@@ -15,7 +15,7 @@ from textual.reactive import reactive
 from textual.widgets import Header, Static
 
 from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH, display_name_for_dish
-from app.models import MenuItem, OrderEntry
+from app.models import MenuItem, OrderEntry, RegisterGroup, RegisterRow
 from app.notes_modal import NotesModal
 from app.order_number_modal import OrderNumberModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
@@ -104,9 +104,10 @@ class ReceiptOrderApp(App):
 
     def __init__(self) -> None:
         super().__init__()
-        self.registered_orders: list[OrderEntry] = []
+        self.registered_orders: list[RegisterRow] = []
         self.system_status = ""
         self.view_pending_g = False
+        self.next_group_id = 1
         self._debug_log_path = Path("/tmp/receipt-debug.log")
         self._log_debug("app_init")
 
@@ -154,6 +155,11 @@ class ReceiptOrderApp(App):
                 event.stop()
                 return
             if event.is_printable and event.character and len(event.character) == 1:
+                if event.character == "C":
+                    self._clear_view_pending_g()
+                    self._ungroup_selected_group()
+                    event.stop()
+                    return
                 if event.character == "G":
                     self._clear_view_pending_g()
                     self._jump_view_cursor_to_bottom()
@@ -162,6 +168,11 @@ class ReceiptOrderApp(App):
                     return
 
                 key = event.character.lower()
+                if key == "c":
+                    self._clear_view_pending_g()
+                    self._group_selected_rows()
+                    event.stop()
+                    return
                 if key == "g":
                     if self.view_pending_g:
                         self._clear_view_pending_g()
@@ -206,6 +217,14 @@ class ReceiptOrderApp(App):
                     event.stop()
                     return
                 self._enter_view_mode()
+                event.stop()
+                return
+
+            if key == "c":
+                if event.character == "C":
+                    self._ungroup_selected_group()
+                else:
+                    self._group_selected_rows()
                 event.stop()
                 return
 
@@ -338,12 +357,13 @@ class ReceiptOrderApp(App):
         self._submit_with_order_number(order_number)
 
     def _submit_with_order_number(self, order_number: int) -> None:
-        batch = save_order_batch(self.registered_orders, order_number)
+        flat_items = self._flatten_register_rows_for_submit()
+        batch = save_order_batch(flat_items, order_number)
         self._log_debug(
-            f"submit_saved order_id={batch.order_id} order_number={batch.order_number} rows={len(batch.items)}"
+            f"submit_saved order_id={batch.order_id} order_number={batch.order_number} rows={len(flat_items)}"
         )
         try:
-            print_order_batch(batch.items, batch.order_number)
+            print_order_batch(flat_items, batch.order_number)
         except Exception as exc:
             update_order_status(batch.order_id, "PRINT_FAILED")
             self.system_status = f"Saved {batch.order_id[:8]} but print failed: {exc}"
@@ -354,6 +374,7 @@ class ReceiptOrderApp(App):
         update_order_status(batch.order_id, "PRINTED")
         self.registered_orders.clear()
         self.order_selected_index = None
+        self.next_group_id = 1
         self.system_status = f"Saved + printed: {batch.order_id[:8]}"
         self._refresh_orders()
         self._refresh_search()
@@ -414,6 +435,111 @@ class ReceiptOrderApp(App):
             self.order_selected_index = (self.order_selected_index + delta) % len(self.registered_orders)
         self._refresh_orders()
 
+    def _is_group_row(self, row: RegisterRow) -> bool:
+        return isinstance(row, RegisterGroup)
+
+    def _selected_row(self) -> RegisterRow | None:
+        if self.order_selected_index is None:
+            return None
+        if not (0 <= self.order_selected_index < len(self.registered_orders)):
+            return None
+        return self.registered_orders[self.order_selected_index]
+
+    def _view_selected_row_bounds(self) -> tuple[int, int] | None:
+        if self.view_mode_active:
+            return self._view_range_bounds()
+        if self.order_selected_index is None:
+            return None
+        if not (0 <= self.order_selected_index < len(self.registered_orders)):
+            return None
+        return (self.order_selected_index, self.order_selected_index)
+
+    def _selection_contains_group(self, start: int, end: int) -> bool:
+        return any(self._is_group_row(row) for row in self.registered_orders[start : end + 1])
+
+    def _allocate_group_id(self) -> int:
+        group_id = self.next_group_id
+        self.next_group_id += 1
+        return group_id
+
+    def _recompute_next_group_id(self) -> None:
+        max_group_id = 0
+        for row in self.registered_orders:
+            if isinstance(row, RegisterGroup):
+                max_group_id = max(max_group_id, row.group_id)
+        self.next_group_id = max_group_id + 1
+
+    def _close_group_id_gap(self, removed_group_id: int) -> None:
+        for row in self.registered_orders:
+            if isinstance(row, RegisterGroup) and row.group_id > removed_group_id:
+                row.group_id = max(1, row.group_id - 1)
+        self._recompute_next_group_id()
+
+    def _group_selected_rows(self) -> None:
+        if not self.registered_orders:
+            return
+        bounds = self._view_selected_row_bounds()
+        if bounds is None:
+            return
+        start, end = bounds
+        if self._selection_contains_group(start, end):
+            self._log_debug("group_create_noop reason=selection_contains_group")
+            return
+
+        members: list[OrderEntry] = []
+        for row in self.registered_orders[start : end + 1]:
+            if isinstance(row, OrderEntry):
+                members.append(row)
+        if not members:
+            return
+
+        group = RegisterGroup(group_id=self._allocate_group_id(), members=members)
+        self.registered_orders[start : end + 1] = [group]
+        self.order_selected_index = start
+        if self.view_mode_active:
+            self.view_anchor_index = start
+            self.view_cursor_index = start
+            self._exit_view_mode()
+        else:
+            self._refresh_orders()
+        self._log_debug(f"group_create id={group.group_id} start={start} count={len(members)}")
+
+    def _ungroup_selected_group(self) -> None:
+        if not self.registered_orders:
+            return
+        idx = self.order_selected_index
+        if idx is None or not (0 <= idx < len(self.registered_orders)):
+            return
+        row = self.registered_orders[idx]
+        if not isinstance(row, RegisterGroup):
+            return
+
+        members = list(row.members)
+        self.registered_orders[idx : idx + 1] = members
+        self._close_group_id_gap(row.group_id)
+        self.order_selected_index = idx
+        if self.view_mode_active:
+            self.view_anchor_index = idx
+            self.view_cursor_index = idx
+        self._refresh_orders()
+        self._log_debug(f"group_remove id={row.group_id} at={idx} restored={len(members)}")
+
+    def _copy_for_submit(self, item: OrderEntry, group_id: int | None) -> OrderEntry:
+        copied = OrderEntry(dish_id=item.dish_id, name=item.name, mode=item.mode, selected_notes=set(item.selected_notes))
+        if group_id is not None:
+            setattr(copied, "_group_id", group_id)
+        return copied
+
+    def _flatten_register_rows_for_submit(self) -> list[OrderEntry]:
+        flattened: list[OrderEntry] = []
+        for row in self.registered_orders:
+            if isinstance(row, RegisterGroup):
+                for member in row.members:
+                    flattened.append(self._copy_for_submit(member, row.group_id))
+            else:
+                flattened.append(self._copy_for_submit(row, None))
+        return flattened
+
     def _delete_selected_order(self) -> None:
         if not self.registered_orders or self.order_selected_index is None:
             return
@@ -424,7 +550,13 @@ class ReceiptOrderApp(App):
             self._refresh_orders()
             return
 
+        deleting_group = isinstance(self.registered_orders[idx], RegisterGroup)
+        deleted_group_id = self.registered_orders[idx].group_id if deleting_group else None
         del self.registered_orders[idx]
+        if deleting_group:
+            self._close_group_id_gap(int(deleted_group_id))
+        else:
+            self._recompute_next_group_id()
 
         if not self.registered_orders:
             self.order_selected_index = None
@@ -434,11 +566,10 @@ class ReceiptOrderApp(App):
         self._refresh_orders()
 
     def _selected_order(self) -> OrderEntry | None:
-        if self.order_selected_index is None:
+        row = self._selected_row()
+        if row is None or isinstance(row, RegisterGroup):
             return None
-        if not (0 <= self.order_selected_index < len(self.registered_orders)):
-            return None
-        return self.registered_orders[self.order_selected_index]
+        return row
 
     def _open_notes_for_selected_order(self) -> None:
         entry = self._selected_order()
@@ -553,6 +684,17 @@ class ReceiptOrderApp(App):
 
         return (start, start + rows)
 
+    def _selected_note_ids(self, item: OrderEntry) -> list[str]:
+        return [note_id for note_id in NOTE_CATALOG if note_id in item.selected_notes]
+
+    def _append_item_with_notes(self, lines: Text, item: OrderEntry, prefix: str, note_indent: str) -> None:
+        lines.append(prefix)
+        lines.append_text(format_order_label(item))
+        selected_note_ids = self._selected_note_ids(item)
+        if selected_note_ids:
+            lines.append(f"\n{note_indent}")
+            lines.append_text(format_note_tags(selected_note_ids))
+
     def _refresh_orders(self) -> None:
         try:
             orders_widget = self.query_one("#orders-list", Static)
@@ -586,13 +728,21 @@ class ReceiptOrderApp(App):
                 lines.append("\n")
 
             row_start = len(lines)
-            lines.append(f"{idx + 1}. ")
-            lines.append_text(format_order_label(self.registered_orders[idx]))
-
-            selected_note_ids = [note_id for note_id in NOTE_CATALOG if note_id in self.registered_orders[idx].selected_notes]
-            if selected_note_ids:
-                lines.append("\n      ")
-                lines.append_text(format_note_tags(selected_note_ids))
+            row = self.registered_orders[idx]
+            if isinstance(row, RegisterGroup):
+                global_prefix = f"{idx + 1}. "
+                group_col = str(row.group_id)
+                first_left = f"{global_prefix}{group_col} │ "
+                rest_left = f"{' ' * len(global_prefix)}{' ' * len(group_col)} │ "
+                for member_idx, member in enumerate(row.members):
+                    if member_idx > 0:
+                        lines.append("\n")
+                    left = first_left if member_idx == 0 else rest_left
+                    member_prefix = f"{left}{member_idx + 1}. "
+                    self._append_item_with_notes(lines, member, member_prefix, " " * len(member_prefix))
+            else:
+                prefix = f"{idx + 1}. "
+                self._append_item_with_notes(lines, row, prefix, " " * len(prefix))
 
             is_selected = False
             if view_bounds is not None:

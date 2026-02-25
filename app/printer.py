@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import sleep
 
 from app.config import (
@@ -31,6 +31,7 @@ class _GroupedPrintRow:
     count: int
     note_key: frozenset[str]
     first_seen_index: int
+    group_allocations: dict[int, int] = field(default_factory=dict)
 
 
 def to_print_label(item: OrderEntry) -> str:
@@ -72,6 +73,23 @@ def _render_line(text: str, font: object) -> object:
 
     x = PRINTER_LEFT_INDENT_PX
     y = (canvas_height - text_height) // 2
+    draw.text((x, y), text, font=font, fill=0)
+    return img
+
+
+def _render_compact_line(text: str, font: object) -> object:
+    from PIL import Image, ImageDraw
+
+    probe = Image.new("1", (1, 1), color=1)
+    probe_draw = ImageDraw.Draw(probe)
+    bbox = probe_draw.textbbox((0, 0), text, font=font)
+    text_height = bbox[3] - bbox[1]
+    canvas_height = max(12, text_height + 6)
+
+    img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
+    draw = ImageDraw.Draw(img)
+    x = PRINTER_LEFT_INDENT_PX
+    y = (canvas_height - text_height) // 2 - bbox[1]
     draw.text((x, y), text, font=font, fill=0)
     return img
 
@@ -146,13 +164,25 @@ def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
     groups: dict[tuple[str | None, str, frozenset[str]], _GroupedPrintRow] = {}
 
     for idx, item in enumerate(items):
+        source_group_id = getattr(item, "_group_id", None)
         note_key = frozenset(item.selected_notes)
         key = (item.mode, item.dish_id, note_key)
         row = groups.get(key)
         if row is not None:
             row.count += 1
+            if isinstance(source_group_id, int) and source_group_id >= 1:
+                row.group_allocations[source_group_id] = row.group_allocations.get(source_group_id, 0) + 1
             continue
-        groups[key] = _GroupedPrintRow(item=item, count=1, note_key=note_key, first_seen_index=idx)
+        allocations: dict[int, int] = {}
+        if isinstance(source_group_id, int) and source_group_id >= 1:
+            allocations[source_group_id] = 1
+        groups[key] = _GroupedPrintRow(
+            item=item,
+            count=1,
+            note_key=note_key,
+            first_seen_index=idx,
+            group_allocations=allocations,
+        )
 
     rows = list(groups.values())
     rows.sort(key=lambda row: (_category_rank(row.item.mode), -row.count, row.first_seen_index))
@@ -170,6 +200,17 @@ def _grouped_print_label(item: OrderEntry, count: int) -> str:
     return f"{base} │{count}"
 
 
+def _group_allocation_line(group_allocations: dict[int, int]) -> str:
+    tokens: list[str] = []
+    for group_id in sorted(group_allocations):
+        count = group_allocations[group_id]
+        if count <= 1:
+            tokens.append(str(group_id))
+        else:
+            tokens.append(f"{group_id}x{count}")
+    return " ".join(tokens)
+
+
 def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
@@ -185,6 +226,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
 
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
     font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
+    compact_font = ImageFont.truetype(PRINTER_FONT_PATH, max(14, PRINTER_FONT_SIZE - 16))
     header_font = ImageFont.truetype(PRINTER_FONT_PATH, max(20, PRINTER_FONT_SIZE - 20))
     grouped_items = _group_print_items(items)
     printer.image(_render_order_number_header(order_number, header_font))
@@ -198,6 +240,11 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
         line = _grouped_print_label(row.item, row.count)
         img = _render_line(line, font)
         printer.image(img)
+
+        if row.count >= 2 and row.group_allocations:
+            allocation = _group_allocation_line(row.group_allocations)
+            if allocation:
+                printer.image(_render_compact_line(f"    {allocation}", compact_font))
 
         for note_label in _ordered_note_labels(row.note_key):
             note_line = _render_line(f"    {note_label}", font)
