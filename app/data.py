@@ -149,6 +149,15 @@ def print_label_override_for_dish(dish_id: str) -> str | None:
 
 def print_note_alias_for_id(note_id: str) -> str:
     """Return a compact print alias for a note id."""
+    spicy_symbol_overrides = {
+        "less_spicy": "☆",
+        "less_less_spicy": "☆☆",
+        "more_spicy": "♥",
+        "more_more_spicy": "♥♥",
+    }
+    if note_id in spicy_symbol_overrides:
+        return spicy_symbol_overrides[note_id]
+
     prefix_to_symbol = {
         "no_": "x",
         "less_": "-",

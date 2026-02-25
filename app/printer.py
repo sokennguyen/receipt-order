@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import sleep
 
 from app.config import (
     PRINTER_FONT_PATH,
@@ -15,6 +16,13 @@ from app.config import (
 )
 from app.data import NOTE_CATALOG, print_label_override_for_dish, print_note_alias_for_id
 from app.models import OrderEntry
+
+# Separator tuning values.
+# Keep these grouped so thermal-print behavior can be tuned in one place.
+_SECTION_SEPARATOR_HEIGHT_PX = 20
+_SECTION_SEPARATOR_THICKNESS_PX = 5
+_SECTION_SEPARATOR_STRIPE_HEIGHT_PX = 2
+_SECTION_SEPARATOR_PAUSE_SECONDS = 0.1
 
 
 @dataclass
@@ -77,12 +85,28 @@ def _render_spacer(height_px: int) -> object:
 def _render_section_separator() -> object:
     from PIL import Image, ImageDraw
 
-    height = 10
-    img = Image.new("1", (PRINTER_WIDTH_PX, height), color=1)
+    img = Image.new("1", (PRINTER_WIDTH_PX, _SECTION_SEPARATOR_HEIGHT_PX), color=1)
     draw = ImageDraw.Draw(img)
-    y = height // 2
-    draw.line((0, y, PRINTER_WIDTH_PX - 1, y), fill=0, width=1)
+    top = max(0, (_SECTION_SEPARATOR_HEIGHT_PX - _SECTION_SEPARATOR_THICKNESS_PX) // 2)
+    bottom = min(_SECTION_SEPARATOR_HEIGHT_PX - 1, top + _SECTION_SEPARATOR_THICKNESS_PX - 1)
+    draw.rectangle((0, top, PRINTER_WIDTH_PX - 1, bottom), fill=0)
     return img
+
+
+def _print_section_separator(printer: object) -> None:
+    """
+    Print the separator in short stripes with tiny pauses.
+
+    This intentionally reduces instantaneous heat so the line stays crisp
+    instead of bleeding into adjacent dots.
+    """
+    separator = _render_section_separator()
+    for top in range(0, separator.height, _SECTION_SEPARATOR_STRIPE_HEIGHT_PX):
+        bottom = min(separator.height, top + _SECTION_SEPARATOR_STRIPE_HEIGHT_PX)
+        stripe = separator.crop((0, top, PRINTER_WIDTH_PX, bottom))
+        printer.image(stripe)
+        if bottom < separator.height:
+            sleep(_SECTION_SEPARATOR_PAUSE_SECONDS)
 
 
 def _render_order_number_header(order_number: int, font: object) -> object:
@@ -164,7 +188,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
 
     for row in grouped_items:
         if row.item.mode == "S" and not printed_s_separator:
-            printer.image(_render_section_separator())
+            _print_section_separator(printer)
             printed_s_separator = True
 
         line = _grouped_print_label(row.item, row.count)

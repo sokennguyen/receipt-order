@@ -66,6 +66,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
   - untagged rows: plain name unless a dish print override exists (example override: `T.T.` for `tteokbokki`)
   - duplicate rows are grouped by mode + dish + exact note set and shown with quantity suffix (example: `R-Classic │3`)
   - groups with notes print one indented line per note under the item line
+  - spicy note aliases are symbol-only: `☆`, `☆☆`, `♥`, `♥♥`
   - if Side Dish (`S`) groups exist, they print after a full-width separator line
   - side dish labels are printed as plain names (no `S-` prefix)
 - If print fails after save, DB records remain (status becomes `PRINT_FAILED`)
