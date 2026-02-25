@@ -77,6 +77,10 @@ class ReceiptOrderApp(App):
 
     input_state = reactive("normal")
     ui_mode = reactive("NORMAL")
+    view_mode_active = reactive(False)
+    view_anchor_index = reactive(None)
+    view_cursor_index = reactive(None)
+    view_selection_kind = reactive("CHAR")
     mode = reactive("G")
     query = reactive("")
     selected_index = reactive(0)
@@ -137,6 +141,24 @@ class ReceiptOrderApp(App):
             f"on_key key={event.key!r} char={event.character!r} printable={event.is_printable} state={self.input_state!r}"
         )
 
+        if self.view_mode_active:
+            if event.key in {"escape", "q", "ctrl+c"}:
+                self._exit_view_mode()
+                event.stop()
+                return
+            if event.is_printable and event.character and len(event.character) == 1:
+                key = event.character.lower()
+                if key == "j":
+                    self._move_view_cursor(1)
+                    event.stop()
+                    return
+                if key == "k":
+                    self._move_view_cursor(-1)
+                    event.stop()
+                    return
+            event.stop()
+            return
+
         if event.key == "ctrl+s":
             self._log_debug("on_key detected ctrl+s -> action_submit_and_print")
             self.action_submit_and_print()
@@ -148,6 +170,18 @@ class ReceiptOrderApp(App):
 
         key = event.character.lower()
         if self.input_state == "normal":
+            if key == "v":
+                if event.character == "V":
+                    self.view_selection_kind = "LINE"
+                    self.system_status = "Shift+V not implemented yet"
+                    self._refresh_search()
+                    self._log_debug("view_mode_shift_v_stub")
+                    event.stop()
+                    return
+                self._enter_view_mode()
+                event.stop()
+                return
+
             if key == "t":
                 self.registered_orders.append(OrderEntry(dish_id="tteokbokki", name=display_name_for_dish("tteokbokki")))
                 self.order_selected_index = len(self.registered_orders) - 1
@@ -377,10 +411,59 @@ class ReceiptOrderApp(App):
     def _sync_ui_mode(self) -> None:
         if isinstance(self.screen, (NotesModal, OrderNumberModal)):
             self.ui_mode = "MODAL"
+        elif self.view_mode_active:
+            self.ui_mode = "VIEW"
         elif self.input_state == "active":
             self.ui_mode = "SEARCH"
         else:
             self.ui_mode = "NORMAL"
+
+    def _enter_view_mode(self) -> None:
+        if self.input_state != "normal":
+            return
+        if not self.registered_orders:
+            return
+        if self.order_selected_index is None or not (0 <= self.order_selected_index < len(self.registered_orders)):
+            self.order_selected_index = 0
+
+        self.view_mode_active = True
+        self.view_selection_kind = "CHAR"
+        self.view_anchor_index = self.order_selected_index
+        self.view_cursor_index = self.order_selected_index
+        self._sync_ui_mode()
+        self._refresh_orders()
+        self._log_debug(
+            f"view_mode_enter anchor={self.view_anchor_index} cursor={self.view_cursor_index} rows={len(self.registered_orders)}"
+        )
+
+    def _exit_view_mode(self) -> None:
+        if not self.view_mode_active:
+            return
+        if self.view_cursor_index is not None and 0 <= self.view_cursor_index < len(self.registered_orders):
+            self.order_selected_index = self.view_cursor_index
+        self.view_mode_active = False
+        self.view_anchor_index = None
+        self.view_cursor_index = None
+        self.view_selection_kind = "CHAR"
+        self._sync_ui_mode()
+        self._refresh_orders()
+        self._log_debug("view_mode_exit")
+
+    def _move_view_cursor(self, delta: int) -> None:
+        if not self.view_mode_active or not self.registered_orders:
+            return
+        if self.view_cursor_index is None:
+            self.view_cursor_index = self.order_selected_index if self.order_selected_index is not None else 0
+        self.view_cursor_index = max(0, min(len(self.registered_orders) - 1, self.view_cursor_index + delta))
+        self.order_selected_index = self.view_cursor_index
+        self._refresh_orders()
+
+    def _view_range_bounds(self) -> tuple[int, int] | None:
+        if not self.view_mode_active:
+            return None
+        if self.view_anchor_index is None or self.view_cursor_index is None:
+            return None
+        return (min(self.view_anchor_index, self.view_cursor_index), max(self.view_anchor_index, self.view_cursor_index))
 
     def _visible_rows(self, widget: Static) -> int:
         height = widget.size.height
@@ -412,6 +495,12 @@ class ReceiptOrderApp(App):
         except NoMatches:
             return
         if not self.registered_orders:
+            if self.view_mode_active:
+                self.view_mode_active = False
+                self.view_anchor_index = None
+                self.view_cursor_index = None
+                self.view_selection_kind = "CHAR"
+                self._sync_ui_mode()
             self.order_selected_index = None
             orders_widget.update("(no items yet)")
             return
@@ -421,6 +510,7 @@ class ReceiptOrderApp(App):
 
         visible_rows = self._visible_rows(orders_widget)
         start, end = self._window_bounds(len(self.registered_orders), visible_rows, self.order_selected_index)
+        view_bounds = self._view_range_bounds()
 
         lines = Text()
         if start > 0:
@@ -439,7 +529,13 @@ class ReceiptOrderApp(App):
                 lines.append("\n      ")
                 lines.append_text(format_note_tags(selected_note_ids))
 
-            if idx == self.order_selected_index:
+            is_selected = False
+            if view_bounds is not None:
+                is_selected = view_bounds[0] <= idx <= view_bounds[1]
+            else:
+                is_selected = idx == self.order_selected_index
+
+            if is_selected:
                 row_end = len(lines)
                 lines.stylize("reverse", row_start, row_end)
 
