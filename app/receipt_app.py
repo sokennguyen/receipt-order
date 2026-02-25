@@ -76,6 +76,7 @@ class ReceiptOrderApp(App):
     """
 
     input_state = reactive("normal")
+    ui_mode = reactive("NORMAL")
     mode = reactive("G")
     query = reactive("")
     selected_index = reactive(0)
@@ -124,10 +125,12 @@ class ReceiptOrderApp(App):
         _, msg = check_printer_dependencies()
         self.system_status = msg
         self._log_debug(f"on_mount printer_status={msg!r}")
+        self._sync_ui_mode()
         self._refresh_all()
 
     def on_key(self, event: Key) -> None:
         if isinstance(self.screen, (NotesModal, OrderNumberModal)):
+            self._sync_ui_mode()
             return
 
         self._log_debug(
@@ -177,6 +180,7 @@ class ReceiptOrderApp(App):
 
             self.mode = key.upper()
             self.input_state = "active"
+            self._sync_ui_mode()
             self.query = ""
             self.selected_index = 0
             self._refresh_search()
@@ -195,6 +199,7 @@ class ReceiptOrderApp(App):
             return
 
         self.input_state = "normal"
+        self._sync_ui_mode()
         self.query = ""
         self.selected_index = 0
         self._refresh_search()
@@ -258,9 +263,11 @@ class ReceiptOrderApp(App):
             self._log_debug("submit_blocked reason=no_rows")
             return
 
+        self.ui_mode = "MODAL"
         self.push_screen(OrderNumberModal(), self._on_order_number_selected)
 
     def _on_order_number_selected(self, order_number: int | None) -> None:
+        self._sync_ui_mode()
         if order_number is None:
             self.system_status = "Submit canceled"
             self._refresh_search()
@@ -360,7 +367,20 @@ class ReceiptOrderApp(App):
         entry = self._selected_order()
         if entry is None:
             return
-        self.push_screen(NotesModal(entry, on_change=self._refresh_orders))
+        self.ui_mode = "MODAL"
+        self.push_screen(NotesModal(entry, on_change=self._on_notes_modal_change))
+
+    def _on_notes_modal_change(self) -> None:
+        self._sync_ui_mode()
+        self._refresh_orders()
+
+    def _sync_ui_mode(self) -> None:
+        if isinstance(self.screen, (NotesModal, OrderNumberModal)):
+            self.ui_mode = "MODAL"
+        elif self.input_state == "active":
+            self.ui_mode = "SEARCH"
+        else:
+            self.ui_mode = "NORMAL"
 
     def _visible_rows(self, widget: Static) -> int:
         height = widget.size.height
@@ -410,8 +430,7 @@ class ReceiptOrderApp(App):
             if idx > start:
                 lines.append("\n")
 
-            pointer = "➤ " if idx == self.order_selected_index else "  "
-            lines.append(pointer)
+            row_start = len(lines)
             lines.append(f"{idx + 1}. ")
             lines.append_text(format_order_label(self.registered_orders[idx]))
 
@@ -419,6 +438,10 @@ class ReceiptOrderApp(App):
             if selected_note_ids:
                 lines.append("\n      ")
                 lines.append_text(format_note_tags(selected_note_ids))
+
+            if idx == self.order_selected_index:
+                row_end = len(lines)
+                lines.stylize("reverse", row_start, row_end)
 
         if end < len(self.registered_orders):
             lines.append("\n⋮", style="dim")
