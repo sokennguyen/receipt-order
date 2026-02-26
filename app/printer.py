@@ -29,6 +29,8 @@ _BAG_EAR_STROKE_PX = 2
 _MAIN_TO_BAG_GAP_PX = 18
 _BAG_TO_BAG_GAP_PX = 12
 _HEADER_RIGHT_GUTTER_PX = 8
+# Extra vertical headroom for full-size lines to avoid descender clipping on thermal output.
+_MAIN_LINE_EXTRA_PX = 30
 
 
 @dataclass
@@ -72,7 +74,7 @@ def check_printer_dependencies() -> tuple[bool, str]:
 def _render_line(text: str, font: object) -> object:
     from PIL import Image, ImageDraw
 
-    canvas_height = PRINTER_FONT_SIZE + 20
+    canvas_height = PRINTER_FONT_SIZE + _MAIN_LINE_EXTRA_PX
     img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
     draw = ImageDraw.Draw(img)
 
@@ -80,7 +82,8 @@ def _render_line(text: str, font: object) -> object:
     text_height = bbox[3] - bbox[1]
 
     x = PRINTER_LEFT_INDENT_PX
-    y = (canvas_height - text_height) // 2
+    # Offset by bbox top so descenders (g, y, p, etc.) are not clipped.
+    y = (canvas_height - text_height) // 2 - bbox[1]
     draw.text((x, y), text, font=font, fill=0)
     return img
 
@@ -307,13 +310,15 @@ def _category_rank(mode: str | None) -> int:
 
 def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
     """Group by mode+dish+exact built-in/custom note sets and then sort for print."""
-    groups: dict[tuple[str | None, str, frozenset[str], frozenset[str]], _GroupedPrintRow] = {}
+    groups: dict[tuple[str | None, str, frozenset[str], frozenset[str], int | None], _GroupedPrintRow] = {}
 
     for idx, item in enumerate(items):
         source_group_id = getattr(item, "_group_id", None)
         note_key = frozenset(item.selected_notes)
         custom_note_key = frozenset(item.custom_notes)
-        key = (item.mode, item.dish_id, note_key, custom_note_key)
+        # `other_side` intentionally does not merge; each row prints individually.
+        uniqueness = idx if item.dish_id == "other_side" else None
+        key = (item.mode, item.dish_id, note_key, custom_note_key, uniqueness)
         row = groups.get(key)
         if row is not None:
             row.count += 1

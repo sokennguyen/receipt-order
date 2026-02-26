@@ -21,7 +21,8 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 - `app/main.py`: Textual app entry point.
 - `pyproject.toml`: Project metadata, dependencies, and console script.
-- `app/data.py`: Canonical dish metadata for display/search/print labels.
+- `app/constant.py`: Editable static menu/note configuration (menu lists, note catalogs, alias mappings).
+- `app/data.py`: Derived mappings and helper logic for display/search/print labels.
 
 ## Controls
 
