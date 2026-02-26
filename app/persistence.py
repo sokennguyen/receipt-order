@@ -81,8 +81,8 @@ def bootstrap_schema() -> None:
 
 def save_order_batch(items: Iterable[OrderEntry], order_number: int) -> SavedOrderBatch:
     """Persist a full order batch and return saved batch metadata."""
-    if not (1 <= order_number <= 1000):
-        raise ValueError("order_number must be between 1 and 1000")
+    if not (0 <= order_number <= 1000):
+        raise ValueError("order_number must be between 0 and 1000")
 
     copied_items = [
         OrderEntry(

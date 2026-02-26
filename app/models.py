@@ -33,3 +33,11 @@ class RegisterGroup:
 
 
 RegisterRow = OrderEntry | RegisterGroup
+
+
+@dataclass(frozen=True)
+class OrderConfirmData:
+    """Order-number confirmation payload from the modal."""
+
+    order_number: int
+    not_paid: bool = False

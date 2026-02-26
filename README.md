@@ -39,7 +39,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `a`: toggle takeaway tag on current selection (single row/member, group header members, or current view selection)
 - `Shift+A`: toggle takeaway for whole order (`all takeaway -> clear all`, otherwise set all takeaway)
 - `N`: open notes modal for selected register item
-- `Ctrl+S`: open Order Number modal (1..1000), then save + print on confirm
+- `Ctrl+S`: open Order Number modal (0..1000), then save + print on confirm
 - `Ctrl+C`: no-op
 - `Ctrl+Q`: quit app
 
@@ -62,13 +62,24 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `Enter`: toggle highlighted note on/off
 - `Esc` / `q` / `Ctrl+C`: close modal
 
+### Order Number modal
+
+- digits: enter order number (`0..1000`)
+- `Ctrl+N`: toggle runtime `NOT PAID` marker for this ticket header
+- `Enter`: confirm
+- `Esc` / `q` / `Ctrl+C`: cancel submit
+
 ## Persistence / print flow
 
 - SQLite file path: `data/receipt.db`
-- Submit (`Ctrl+S`) prompts for order number (1..1000); cancel aborts submit
+- Submit (`Ctrl+S`) prompts for order number (0..1000); cancel aborts submit
+- In order-number modal, `Ctrl+N` toggles a runtime `NOT PAID` marker printed in the header (not persisted)
 - Confirmed submit writes `orders` (including `order_number`), `order_items`, and `order_item_notes`
 - Print format:
-  - first line: right-aligned order number in smaller text
+  - header behavior:
+    - `order_number > 0`: prints right-aligned order number (plus `NOT PAID` if toggled)
+    - `order_number == 0` and paid: no header printed
+    - `order_number == 0` and `NOT PAID`: prints header with small `NOT PAID` marker only
   - mode rows: `<Mode>-<BaseName>` (example: `R-Classic`, `G-Pork`)
   - untagged rows: plain name unless a dish print override exists (example override: `T.T.` for `tteokbokki`)
   - duplicate rows are grouped by mode + dish + exact note set and shown with quantity suffix (example: `R-Classic │3`)

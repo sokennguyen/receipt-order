@@ -15,7 +15,7 @@ from textual.reactive import reactive
 from textual.widgets import Header, Static
 
 from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH, display_name_for_dish
-from app.models import MenuItem, OrderEntry, RegisterGroup, RegisterRow
+from app.models import MenuItem, OrderConfirmData, OrderEntry, RegisterGroup, RegisterRow
 from app.notes_modal import NotesModal
 from app.order_number_modal import OrderNumberModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
@@ -407,24 +407,26 @@ class ReceiptOrderApp(App):
         self.ui_mode = "MODAL"
         self.push_screen(OrderNumberModal(), self._on_order_number_selected)
 
-    def _on_order_number_selected(self, order_number: int | None) -> None:
+    def _on_order_number_selected(self, result: OrderConfirmData | None) -> None:
         self._sync_ui_mode()
-        if order_number is None:
+        if result is None:
             self.system_status = "Submit canceled"
             self._refresh_search()
             self._log_debug("submit_canceled reason=no_order_number")
             return
-        self._log_debug(f"submit_order_number_selected order_number={order_number}")
-        self._submit_with_order_number(order_number)
+        self._log_debug(
+            f"submit_order_number_selected order_number={result.order_number} not_paid={result.not_paid}"
+        )
+        self._submit_with_order_number(result.order_number, result.not_paid)
 
-    def _submit_with_order_number(self, order_number: int) -> None:
+    def _submit_with_order_number(self, order_number: int, not_paid: bool) -> None:
         flat_items = self._flatten_register_rows_for_submit()
         batch = save_order_batch(flat_items, order_number)
         self._log_debug(
-            f"submit_saved order_id={batch.order_id} order_number={batch.order_number} rows={len(flat_items)}"
+            f"submit_saved order_id={batch.order_id} order_number={batch.order_number} not_paid={not_paid} rows={len(flat_items)}"
         )
         try:
-            print_order_batch(flat_items, batch.order_number)
+            print_order_batch(flat_items, batch.order_number, not_paid=not_paid)
         except Exception as exc:
             update_order_status(batch.order_id, "PRINT_FAILED")
             self.system_status = f"Saved {batch.order_id[:8]} but print failed: {exc}"

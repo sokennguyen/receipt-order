@@ -8,8 +8,10 @@ from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from app.models import OrderConfirmData
 
-class OrderNumberModal(ModalScreen[int | None]):
+
+class OrderNumberModal(ModalScreen[OrderConfirmData | None]):
     """Prompt for an order number before submit/print."""
 
     CSS = """
@@ -49,6 +51,11 @@ class OrderNumberModal(ModalScreen[int | None]):
         margin-bottom: 1;
     }
 
+    #order-number-payment {
+        color: #dddddd;
+        margin-bottom: 1;
+    }
+
     #order-number-help {
         color: #dddddd;
     }
@@ -58,14 +65,16 @@ class OrderNumberModal(ModalScreen[int | None]):
         super().__init__()
         self.value = ""
         self.error = ""
+        self.not_paid = False
 
     def compose(self) -> ComposeResult:
         with Container(id="order-number-dialog"):
             yield Static("Order Number", id="order-number-title")
-            yield Static("Enter a number from 1 to 1000", id="order-number-prompt")
+            yield Static("Enter a number from 0 to 1000", id="order-number-prompt")
             yield Static(id="order-number-value")
             yield Static(id="order-number-error")
-            yield Static("Digits only. Enter confirm. Backspace delete. Esc/q/Ctrl+C cancel.", id="order-number-help")
+            yield Static(id="order-number-payment")
+            yield Static("Digits only. Enter confirm. Ctrl+N toggle NOT PAID. Backspace delete. Esc/q/Ctrl+C cancel.", id="order-number-help")
 
     def on_mount(self) -> None:
         self._refresh_content()
@@ -78,6 +87,12 @@ class OrderNumberModal(ModalScreen[int | None]):
 
         if event.key == "enter":
             self._confirm()
+            event.stop()
+            return
+
+        if event.key == "ctrl+n":
+            self.not_paid = not self.not_paid
+            self._refresh_content()
             event.stop()
             return
 
@@ -103,15 +118,17 @@ class OrderNumberModal(ModalScreen[int | None]):
             return
 
         parsed = int(self.value)
-        if not (1 <= parsed <= 1000):
-            self.error = "Order number must be between 1 and 1000."
+        if not (0 <= parsed <= 1000):
+            self.error = "Order number must be between 0 and 1000."
             self._refresh_content()
             return
 
-        self.dismiss(parsed)
+        self.dismiss(OrderConfirmData(order_number=parsed, not_paid=self.not_paid))
 
     def _refresh_content(self) -> None:
         value_widget = self.query_one("#order-number-value", Static)
         error_widget = self.query_one("#order-number-error", Static)
+        payment_widget = self.query_one("#order-number-payment", Static)
         value_widget.update(self.value or "")
         error_widget.update(self.error or "")
+        payment_widget.update("Payment: NOT PAID" if self.not_paid else "Payment: PAID")

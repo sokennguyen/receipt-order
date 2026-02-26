@@ -28,6 +28,7 @@ _BAG_OUTLINE_STROKE_PX = 2
 _BAG_EAR_STROKE_PX = 2
 _MAIN_TO_BAG_GAP_PX = 18
 _BAG_TO_BAG_GAP_PX = 12
+_HEADER_RIGHT_GUTTER_PX = 8
 
 
 @dataclass
@@ -244,54 +245,52 @@ def _print_section_separator(printer: object) -> None:
             sleep(_SECTION_SEPARATOR_PAUSE_SECONDS)
 
 
-def _render_order_number_header(order_number: int, font: object) -> object:
+def _render_order_number_header(order_number: int, font: object, not_paid: bool = False) -> object:
     from PIL import Image, ImageDraw
 
-    text = str(order_number)
     probe = Image.new("1", (1, 1), color=1)
     probe_draw = ImageDraw.Draw(probe)
-    text_bbox = probe_draw.textbbox((0, 0), text, font=font)
+    has_number = order_number > 0
+    text = str(order_number) if has_number else ""
+    text_bbox = probe_draw.textbbox((0, 0), text, font=font) if has_number else (0, 0, 0, 0)
     text_width = text_bbox[2] - text_bbox[0]
     text_height = text_bbox[3] - text_bbox[1]
     top_padding = 4
     bottom_padding = 12
-    canvas_height = max(26, text_height + top_padding + bottom_padding)
+
+    badge_font = None
+    badge_text = "NOT PAID"
+    badge_bbox = (0, 0, 0, 0)
+    badge_height = 0
+    if not_paid:
+        try:
+            badge_font = font.font_variant(size=max(10, int(font.size * 0.45)))
+        except Exception:
+            badge_font = font
+        badge_bbox = probe_draw.textbbox((0, 0), badge_text, font=badge_font)
+        badge_height = badge_bbox[3] - badge_bbox[1]
+
+    content_height = max(text_height if has_number else 0, badge_height if not_paid else 0)
+    canvas_height = max(26, content_height + top_padding + bottom_padding)
 
     img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
     draw = ImageDraw.Draw(img)
 
-    text_x = PRINTER_WIDTH_PX - text_width - text_bbox[0]
-    text_y = top_padding - text_bbox[1]
-    draw.text((text_x, text_y), text, font=font, fill=0)
+    if has_number:
+        text_x = PRINTER_WIDTH_PX - _HEADER_RIGHT_GUTTER_PX - text_width - text_bbox[0]
+        text_y = top_padding - text_bbox[1]
+        draw.text((text_x, text_y), text, font=font, fill=0)
+    if not_paid:
+        badge_x = PRINTER_LEFT_INDENT_PX
+        badge_y = max(0, top_padding - badge_bbox[1])
+        assert badge_font is not None
+        draw.text((badge_x, badge_y), badge_text, font=badge_font, fill=0)
     return img
 
 
-def _print_order_header_phase(printer: object, order_number: int, header_font: object) -> None:
+def _print_order_header_phase(printer: object, order_number: int, header_font: object, not_paid: bool) -> None:
     """Print the order header as an isolated first phase."""
-    printer.image(_render_order_number_header(order_number, header_font))
-
-
-def _begin_body_phase(printer: object) -> None:
-    """
-    Reset printer state between header and body phases.
-
-    Some devices show right-edge raster artifacts when a right-aligned header image
-    is followed immediately by body images. A soft ESC/POS reset boundary helps
-    isolate those two print tasks.
-    """
-    try:
-        raw = getattr(printer, "_raw", None)
-        if callable(raw):
-            raw(b"\x1b@")  # ESC @ initialize/reset
-    except Exception:
-        # Best-effort only: if reset is unsupported, continue with current state.
-        pass
-
-    try:
-        printer.set(align="left")
-    except Exception:
-        # Keep printing even if this adapter doesn't expose set/align.
-        pass
+    printer.image(_render_order_number_header(order_number, header_font, not_paid=not_paid))
 
 
 def _category_rank(mode: str | None) -> int:
@@ -342,7 +341,7 @@ def _grouped_print_label(item: OrderEntry, count: int) -> str:
     base = to_print_label(item)
     if count <= 1:
         return base
-    return f"{base} │{count}"
+    return f"{base} {count}"
 
 
 def _group_allocation_line(group_allocations: dict[int, int]) -> str:
@@ -369,12 +368,12 @@ def _takeaway_buckets(items: list[OrderEntry]) -> list[tuple[int | None, list[Or
     return [(key, buckets[key]) for key in ordered_keys]
 
 
-def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
+def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool = False) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
         return
-    if not (1 <= order_number <= 1000):
-        raise ValueError("order_number must be between 1 and 1000")
+    if not (0 <= order_number <= 1000):
+        raise ValueError("order_number must be between 0 and 1000")
 
     try:
         from escpos.printer import Usb
@@ -394,8 +393,9 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     takeaway_items = [item for item in items if item.is_takeaway]
     grouped_main_rows = _group_print_items(main_items)
     takeaway_buckets = _takeaway_buckets(takeaway_items)
-    _print_order_header_phase(printer, order_number, header_font)
-    _begin_body_phase(printer)
+    header_needed = (order_number > 0) or bool(not_paid)
+    if header_needed:
+        _print_order_header_phase(printer, order_number, header_font, not_paid)
     printed_main_s_separator = False
 
     for row in grouped_main_rows:
