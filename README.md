@@ -54,7 +54,12 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - Search supports shorthand aliases and punctuation-insensitive matching
   - examples: `s-tuna`, `stuna`, and `st` all match `S-Tuna Gimbap`
   - example: `chix` matches `Chicken Ramyun`
-  - Side Dish mode items: `Kimchi`, `Ssamjang`, `Namu`, `Hot`, `Rice`
+  - Side Dish mode items: `Kimchi`, `Ssamjang`, `Namu`, `Hot`, `Rice`, `Other item`
+  - `S` mode `Other item` flow:
+    - select `Other item`, press `Enter` to start inline typing on that result row
+    - type custom item text; `Backspace` deletes
+    - `Enter` confirms (adds item if non-empty), `Esc`/`Ctrl+C` cancels typing
+    - after confirm/cancel, app stays in `S` mode and clears search query
 
 ### Notes modal
 

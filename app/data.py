@@ -111,9 +111,9 @@ DISH_NOTE_OVERRIDES: dict[str, dict[str, list[str]]] = {
 DISH_META_BY_ID: dict[str, DishMeta] = {
     "beef_gimbap": DishMeta(display_name="Beef Gimbap", aliases=[]),
     "tuna_gimbap": DishMeta(display_name="Tuna Gimbap", aliases=[]),
-    "spicy_tuna_gimbap": DishMeta(display_name="S-Tuna Gimbap", aliases=["st", "stuna", "s-tuna"]),
+    "spicy_tuna_gimbap": DishMeta(display_name="S.Tuna Gimbap", aliases=["st", "stuna", "s-tuna"]),
     "sausage_gimbap": DishMeta(display_name="Sausage Gimbap", aliases=[]),
-    "mushroom_gimbap": DishMeta(display_name="Mushroom Gimbap", aliases=[]),
+    "mushroom_gimbap": DishMeta(display_name="Mush Gimbap", aliases=[]),
     "salad_gimbap": DishMeta(display_name="Salad Gimbap", aliases=[]),
     "tofu_gimbap": DishMeta(display_name="Tofu Gimbap", aliases=["tofu", "vegtofu"]),
     "pork_ramyun": DishMeta(display_name="Pork Ramyun", aliases=[]),
@@ -129,6 +129,7 @@ DISH_META_BY_ID: dict[str, DishMeta] = {
     "namu_side": DishMeta(display_name="Namu", aliases=[]),
     "hot_side": DishMeta(display_name="Hot", aliases=[]),
     "rice_side": DishMeta(display_name="Rice", aliases=[]),
+    "other_side": DishMeta(display_name="Other item", aliases=["other"]),
 }
 
 
@@ -234,6 +235,7 @@ MENU_DISH_IDS_BY_MODE: dict[str, list[str]] = {
         "namu_side",
         "hot_side",
         "rice_side",
+        "other_side",
     ],
 }
 

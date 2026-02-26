@@ -107,6 +107,8 @@ class ReceiptOrderApp(App):
         super().__init__()
         self.registered_orders: list[RegisterRow] = []
         self.system_status = ""
+        self.s_other_typing_active = False
+        self.s_other_input_value = ""
         self.view_pending_g = False
         self.view_group_locked = False
         self.view_group_row_index = None
@@ -149,6 +151,20 @@ class ReceiptOrderApp(App):
     def on_key(self, event: Key) -> None:
         if isinstance(self.screen, (NotesModal, OrderNumberModal)):
             self._sync_ui_mode()
+            return
+
+        if self.input_state == "active" and self.mode == "S" and self.s_other_typing_active:
+            if event.key == "escape":
+                self._cancel_s_other_typing(clear_input=True)
+                event.stop()
+                return
+            if event.is_printable and event.character and len(event.character) == 1:
+                self.s_other_input_value += event.character
+                self._refresh_results(self._filtered_results())
+                event.stop()
+                return
+            # Ignore navigation/other non-text keys while typing custom side item.
+            event.stop()
             return
 
         self._log_debug(
@@ -335,6 +351,9 @@ class ReceiptOrderApp(App):
     def action_cancel_active_mode(self) -> None:
         if isinstance(self.screen, NotesModal):
             return
+        if self.input_state == "active" and self.mode == "S" and self.s_other_typing_active:
+            self._cancel_s_other_typing(clear_input=True)
+            return
         if self.input_state == "normal":
             return
 
@@ -342,12 +361,15 @@ class ReceiptOrderApp(App):
         self._sync_ui_mode()
         self.query = ""
         self.selected_index = 0
+        self._cancel_s_other_typing(clear_input=True)
         self._refresh_search()
 
     def action_cycle_results(self, delta: int) -> None:
         if isinstance(self.screen, NotesModal):
             return
         if self.input_state != "active":
+            return
+        if self.input_state == "active" and self.mode == "S" and self.s_other_typing_active:
             return
 
         results = self._filtered_results()
@@ -368,16 +390,29 @@ class ReceiptOrderApp(App):
         if not results:
             return
 
+        if self.mode == "S" and self._is_s_other_row_selected(results):
+            if self.s_other_typing_active:
+                self._confirm_s_other_typing()
+            else:
+                self._start_s_other_typing()
+            return
+
         item = results[self.selected_index]
         self.registered_orders.append(OrderEntry(dish_id=item.dish_id, name=item.name, mode=self.mode))
         self.order_selected_index = len(self.registered_orders) - 1
         self.order_selected_member_index = None
+        self._cancel_s_other_typing(clear_input=True)
         self._refresh_orders()
 
     def action_backspace_query(self) -> None:
         if isinstance(self.screen, NotesModal):
             return
         if self.input_state != "active":
+            return
+        if self.input_state == "active" and self.mode == "S" and self.s_other_typing_active:
+            if self.s_other_input_value:
+                self.s_other_input_value = self.s_other_input_value[:-1]
+                self._refresh_results(self._filtered_results())
             return
 
         if not self.query:
@@ -1337,7 +1372,17 @@ class ReceiptOrderApp(App):
             if idx > start:
                 lines.append("\n")
             pointer = "➤ " if idx == self.selected_index else "  "
-            lines.append(f"{pointer}{results[idx].name}")
+            item = results[idx]
+            if (
+                self.input_state == "active"
+                and self.mode == "S"
+                and self.s_other_typing_active
+                and idx == self.selected_index
+                and item.dish_id == "other_side"
+            ):
+                lines.append(f"{pointer}Other item: {self.s_other_input_value}|")
+            else:
+                lines.append(f"{pointer}{item.name}")
 
         if end < len(results):
             lines.append("\n⋮", style="dim")
@@ -1353,3 +1398,39 @@ class ReceiptOrderApp(App):
             footer.update(f"Mode: SEARCH ({self._search_mode_label()})")
             return
         footer.update(f"Mode: {self.ui_mode}")
+
+    def _is_s_other_row_selected(self, results: list[MenuItem]) -> bool:
+        if self.mode != "S":
+            return False
+        if not (0 <= self.selected_index < len(results)):
+            return False
+        return results[self.selected_index].dish_id == "other_side"
+
+    def _start_s_other_typing(self) -> None:
+        self.s_other_typing_active = True
+        self.s_other_input_value = ""
+        self._refresh_results(self._filtered_results())
+
+    def _cancel_s_other_typing(self, clear_input: bool = True) -> None:
+        self.s_other_typing_active = False
+        if clear_input:
+            self.s_other_input_value = ""
+        if self.input_state == "active":
+            self._refresh_results(self._filtered_results())
+
+    def _reset_s_active_search_view(self) -> None:
+        self.query = ""
+        self.selected_index = 0
+        self._refresh_search()
+
+    def _confirm_s_other_typing(self) -> None:
+        normalized = self.s_other_input_value.strip()
+        self.s_other_typing_active = False
+        self.s_other_input_value = ""
+
+        if normalized:
+            self.registered_orders.append(OrderEntry(dish_id="other_side", name=normalized, mode="S"))
+            self.order_selected_index = len(self.registered_orders) - 1
+            self.order_selected_member_index = None
+            self._refresh_orders()
+        self._reset_s_active_search_view()
