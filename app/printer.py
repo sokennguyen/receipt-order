@@ -23,6 +23,7 @@ _SECTION_SEPARATOR_HEIGHT_PX = 20
 _SECTION_SEPARATOR_THICKNESS_PX = 5
 _SECTION_SEPARATOR_STRIPE_HEIGHT_PX = 2
 _SECTION_SEPARATOR_PAUSE_SECONDS = 0.1
+_BAG_INLINE_SEPARATOR_TOKEN = "__BAG_SEP__"
 
 
 @dataclass
@@ -98,6 +99,113 @@ def _render_spacer(height_px: int) -> object:
     from PIL import Image
 
     return Image.new("1", (PRINTER_WIDTH_PX, max(1, height_px)), color=1)
+
+
+def _fit_text_to_px(text: str, font: object, max_width_px: int) -> str:
+    from PIL import Image, ImageDraw
+
+    probe = Image.new("1", (1, 1), color=1)
+    draw = ImageDraw.Draw(probe)
+    if draw.textbbox((0, 0), text, font=font)[2] <= max_width_px:
+        return text
+    ellipsis = "..."
+    trimmed = text
+    while trimmed:
+        candidate = f"{trimmed}{ellipsis}"
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width_px:
+            return candidate
+        trimmed = trimmed[:-1]
+    return ellipsis
+
+
+def _draw_bag_ear(draw: object, center_x: int, baseline_y: int, stroke_width: int = 1) -> int:
+    """Draw a two-loop bag handle ear and return its height in pixels."""
+    loop_width = 24
+    loop_height = 12
+    inner_gap = 4
+    outer_stem_height = 4
+    total_width = (loop_width * 2) + inner_gap
+    left_outer = center_x - (total_width // 2)
+    right_outer = left_outer + total_width
+    left_loop = (left_outer, baseline_y - loop_height, left_outer + loop_width, baseline_y)
+    right_loop = (right_outer - loop_width, baseline_y - loop_height, right_outer, baseline_y)
+
+    # Outer stems anchor the ear to the top box border.
+    draw.line(
+        (left_outer, baseline_y, left_outer, baseline_y - outer_stem_height),
+        fill=0,
+        width=stroke_width,
+    )
+    draw.line(
+        (right_outer, baseline_y, right_outer, baseline_y - outer_stem_height),
+        fill=0,
+        width=stroke_width,
+    )
+    # Two-loop handle using arcs.
+    draw.arc(left_loop, 180, 0, fill=0, width=stroke_width)
+    draw.arc(right_loop, 180, 0, fill=0, width=stroke_width)
+    return loop_height
+
+
+def _render_taw_bag_box(lines: list[str], font: object) -> object:
+    from PIL import Image, ImageDraw
+
+    if not lines:
+        lines = [""]
+
+    line_gap_px = 4
+    pad_x = 10
+    pad_y = 8
+    max_inner_width = max(120, PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2) - (pad_x * 2))
+
+    safe_lines = []
+    for line in lines:
+        if line == _BAG_INLINE_SEPARATOR_TOKEN:
+            safe_lines.append(line)
+            continue
+        safe_lines.append(_fit_text_to_px(line, font, max_inner_width))
+
+    probe = Image.new("1", (1, 1), color=1)
+    probe_draw = ImageDraw.Draw(probe)
+    line_sizes = []
+    for line in safe_lines:
+        if line == _BAG_INLINE_SEPARATOR_TOKEN:
+            line_sizes.append((max_inner_width, 2, 0))
+            continue
+        bbox = probe_draw.textbbox((0, 0), line, font=font)
+        line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1]))
+
+    content_width = max(width for width, _, _ in line_sizes)
+    content_height = sum(height for _, height, _ in line_sizes) + line_gap_px * (len(line_sizes) - 1)
+    box_width = min(PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2), content_width + (pad_x * 2))
+    x0 = PRINTER_LEFT_INDENT_PX
+    x1 = x0 + box_width - 1
+
+    ear_h = 12
+    ear_margin = 2
+    top_gap = ear_h + ear_margin
+
+    y0 = top_gap
+    y1 = y0 + (pad_y * 2) + content_height
+    img_h = y1 + 4
+
+    img = Image.new("1", (PRINTER_WIDTH_PX, img_h), color=1)
+    draw = ImageDraw.Draw(img)
+
+    draw.rectangle((x0, y0, x1, y1), outline=0)
+    ear_center_x = x0 + (box_width // 2)
+    _draw_bag_ear(draw, ear_center_x, y0, stroke_width=1)
+
+    y = y0 + pad_y
+    text_x = x0 + pad_x
+    for line, (_, h, top) in zip(safe_lines, line_sizes):
+        if line == _BAG_INLINE_SEPARATOR_TOKEN:
+            draw.rectangle((text_x, y, x1 - pad_x, y + h - 1), fill=0)
+        else:
+            draw.text((text_x, y - top), line, font=font, fill=0)
+        y += h + line_gap_px
+
+    return img
 
 
 def _render_section_separator() -> object:
@@ -211,6 +319,19 @@ def _group_allocation_line(group_allocations: dict[int, int]) -> str:
     return " ".join(tokens)
 
 
+def _takeaway_buckets(items: list[OrderEntry]) -> list[tuple[int | None, list[OrderEntry]]]:
+    buckets: dict[int | None, list[OrderEntry]] = {}
+    for item in items:
+        if not item.is_takeaway:
+            continue
+        group_id = getattr(item, "_group_id", None)
+        key = group_id if isinstance(group_id, int) and group_id >= 1 else None
+        buckets.setdefault(key, []).append(item)
+    grouped_keys = sorted(key for key in buckets if key is not None)
+    ordered_keys = grouped_keys + ([None] if None in buckets else [])
+    return [(key, buckets[key]) for key in ordered_keys]
+
+
 def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     """Print all items in order and cut the ticket at the end."""
     if not items:
@@ -232,14 +353,17 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     compact_font_size = max(10, int(round(compact_base_size * (1 / 3))))
     compact_font = ImageFont.truetype(PRINTER_FONT_PATH, compact_font_size)
     header_font = ImageFont.truetype(PRINTER_FONT_PATH, max(20, PRINTER_FONT_SIZE - 20))
-    grouped_items = _group_print_items(items)
+    main_items = [item for item in items if not item.is_takeaway]
+    takeaway_items = [item for item in items if item.is_takeaway]
+    grouped_main_rows = _group_print_items(main_items)
+    takeaway_buckets = _takeaway_buckets(takeaway_items)
     printer.image(_render_order_number_header(order_number, header_font))
-    printed_s_separator = False
+    printed_main_s_separator = False
 
-    for row in grouped_items:
-        if row.item.mode == "S" and not printed_s_separator:
+    for row in grouped_main_rows:
+        if row.item.mode == "S" and not printed_main_s_separator:
             _print_section_separator(printer)
-            printed_s_separator = True
+            printed_main_s_separator = True
 
         line = _grouped_print_label(row.item, row.count)
         img = _render_line(line, font)
@@ -254,8 +378,24 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
             note_line = _render_line(f"    {note_label}", font)
             printer.image(note_line)
 
+    for group_id, bucket_items in takeaway_buckets:
+        bag_rows = _group_print_items(bucket_items)
+        bag_lines: list[str] = []
+        printed_bag_s_separator = False
+        for row in bag_rows:
+            if row.item.mode == "S" and not printed_bag_s_separator:
+                bag_lines.append(_BAG_INLINE_SEPARATOR_TOKEN)
+                printed_bag_s_separator = True
+            bag_lines.append(_grouped_print_label(row.item, row.count))
+            for note_label in _ordered_note_labels(row.note_key):
+                bag_lines.append(f"    {note_label}")
+        printer.image(_render_taw_bag_box(bag_lines, font))
+        if group_id is not None:
+            printer.image(_render_compact_line(str(group_id), compact_font))
+
     # Give single-line tickets a minimal extra tail for easier tearing.
-    if len(grouped_items) == 1:
+    bag_grouped_count_total = sum(len(_group_print_items(bucket_items)) for _, bucket_items in takeaway_buckets)
+    if len(grouped_main_rows) == 1 or (len(grouped_main_rows) == 0 and bag_grouped_count_total == 1):
         printer.image(_render_spacer(PRINTER_SINGLE_ITEM_SPACER_PX))
 
     printer.cut()

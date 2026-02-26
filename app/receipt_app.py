@@ -90,6 +90,7 @@ class ReceiptOrderApp(App):
     query = reactive("")
     selected_index = reactive(0)
     order_selected_index = reactive(None)
+    order_selected_member_index = reactive(None)
 
     BINDINGS = [
         ("tab", "cycle_results(1)", "Next result"),
@@ -107,6 +108,10 @@ class ReceiptOrderApp(App):
         self.registered_orders: list[RegisterRow] = []
         self.system_status = ""
         self.view_pending_g = False
+        self.view_group_locked = False
+        self.view_group_row_index = None
+        self.view_member_anchor_index = None
+        self.view_member_cursor_index = None
         self.next_group_id = 1
         self._bulk_note_targets: list[OrderEntry] | None = None
         self._debug_log_path = Path("/tmp/receipt-debug.log")
@@ -161,6 +166,11 @@ class ReceiptOrderApp(App):
                     self._open_notes_for_view_selection()
                     event.stop()
                     return
+                if event.character == "A":
+                    self._clear_view_pending_g()
+                    self._toggle_takeaway_whole_order()
+                    event.stop()
+                    return
                 if event.character == "J":
                     self._clear_view_pending_g()
                     self._reorder_view_selection_block(1)
@@ -197,6 +207,11 @@ class ReceiptOrderApp(App):
                 if key == "n":
                     self._clear_view_pending_g()
                     self._open_notes_for_view_selection()
+                    event.stop()
+                    return
+                if key == "a":
+                    self._clear_view_pending_g()
+                    self._toggle_takeaway_selection()
                     event.stop()
                     return
                 if key == "g":
@@ -251,6 +266,14 @@ class ReceiptOrderApp(App):
                     self._ungroup_selected_group()
                 else:
                     self._group_selected_rows()
+                event.stop()
+                return
+
+            if key == "a":
+                if event.character == "A":
+                    self._toggle_takeaway_whole_order()
+                else:
+                    self._toggle_takeaway_selection()
                 event.stop()
                 return
 
@@ -665,10 +688,89 @@ class ReceiptOrderApp(App):
         self._log_debug(f"group_remove id={row.group_id} at={idx} restored={len(members)}")
 
     def _copy_for_submit(self, item: OrderEntry, group_id: int | None) -> OrderEntry:
-        copied = OrderEntry(dish_id=item.dish_id, name=item.name, mode=item.mode, selected_notes=set(item.selected_notes))
+        copied = OrderEntry(
+            dish_id=item.dish_id,
+            name=item.name,
+            mode=item.mode,
+            selected_notes=set(item.selected_notes),
+            is_takeaway=item.is_takeaway,
+        )
         if group_id is not None:
             setattr(copied, "_group_id", group_id)
         return copied
+
+    def _all_register_items(self) -> list[OrderEntry]:
+        items: list[OrderEntry] = []
+        for row in self.registered_orders:
+            if isinstance(row, RegisterGroup):
+                items.extend(row.members)
+            else:
+                items.append(row)
+        return items
+
+    def _selection_targets_with_context(self) -> list[tuple[OrderEntry, bool]]:
+        if self.view_mode_active:
+            if self.view_group_locked:
+                if self.view_group_row_index is None or not (0 <= self.view_group_row_index < len(self.registered_orders)):
+                    return []
+                row = self.registered_orders[self.view_group_row_index]
+                if not isinstance(row, RegisterGroup):
+                    return []
+                bounds = self._view_member_range_bounds()
+                if bounds is None:
+                    return []
+                start, end = bounds
+                if not (0 <= start <= end < len(row.members)):
+                    return []
+                return [(item, True) for item in row.members[start : end + 1]]
+
+            bounds = self._view_range_bounds()
+            if bounds is None:
+                return []
+            start, end = bounds
+            if not (0 <= start <= end < len(self.registered_orders)):
+                return []
+            targets: list[tuple[OrderEntry, bool]] = []
+            for row in self.registered_orders[start : end + 1]:
+                if isinstance(row, RegisterGroup):
+                    targets.extend((member, True) for member in row.members)
+                else:
+                    targets.append((row, False))
+            return targets
+
+        selected_member = self._selected_group_and_member()
+        if selected_member is not None:
+            group, member_idx = selected_member
+            return [(group.members[member_idx], True)]
+
+        row = self._selected_row()
+        if row is None:
+            return []
+        if isinstance(row, RegisterGroup):
+            return [(member, True) for member in row.members]
+        return [(row, False)]
+
+    def _toggle_takeaway_selection(self) -> None:
+        targets_with_ctx = self._selection_targets_with_context()
+        if not targets_with_ctx:
+            return
+        has_grouped = any(is_grouped for _, is_grouped in targets_with_ctx)
+        has_non_grouped = any(not is_grouped for _, is_grouped in targets_with_ctx)
+        if has_grouped and has_non_grouped:
+            self._log_debug("takeaway_toggle_noop reason=mixed_group_context")
+            return
+        for item, _ in targets_with_ctx:
+            item.is_takeaway = not item.is_takeaway
+        self._refresh_orders()
+
+    def _toggle_takeaway_whole_order(self) -> None:
+        items = self._all_register_items()
+        if not items:
+            return
+        make_takeaway = not all(item.is_takeaway for item in items)
+        for item in items:
+            item.is_takeaway = make_takeaway
+        self._refresh_orders()
 
     def _flatten_register_rows_for_submit(self) -> list[OrderEntry]:
         flattened: list[OrderEntry] = []
@@ -1074,6 +1176,8 @@ class ReceiptOrderApp(App):
 
     def _append_item_with_notes(self, lines: Text, item: OrderEntry, prefix: str, note_indent: str) -> None:
         lines.append(prefix)
+        if item.is_takeaway:
+            lines.append("TAW ", style="bold yellow")
         lines.append_text(format_order_label(item))
         selected_note_ids = self._selected_note_ids(item)
         if selected_note_ids:

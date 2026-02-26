@@ -21,6 +21,7 @@ class OrderEntry:
     name: str
     mode: str | None = None
     selected_notes: set[str] = field(default_factory=set)
+    is_takeaway: bool = False
 
 
 @dataclass

@@ -36,6 +36,8 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - `Shift+V`: reserved for future linewise View mode (not implemented yet)
 - `C`: group selected register row(s) into one customer group (view-range or single row)
 - `Shift+C`: ungroup selected customer group row
+- `a`: toggle takeaway tag on current selection (single row/member, group header members, or current view selection)
+- `Shift+A`: toggle takeaway for whole order (`all takeaway -> clear all`, otherwise set all takeaway)
 - `N`: open notes modal for selected register item
 - `Ctrl+S`: open Order Number modal (1..1000), then save + print on confirm
 - `Ctrl+C`: no-op
@@ -75,4 +77,8 @@ This repository is now initialized with a minimal [Textual](https://textual.text
   - spicy note aliases are symbol-only: `☆`, `☆☆`, `♥`, `♥♥`
   - if Side Dish (`S`) groups exist, they print after a full-width separator line
   - side dish labels are printed as plain names (no `S-` prefix)
+  - takeaway items also print in a same-ticket boxed bag section below main lines:
+    - grouped takeaway -> one bag per group id (ascending)
+    - ungrouped takeaway -> one `DEFAULT` bag at the end
+    - each bag has header ear `ᙏ`; grouped bags include one compact group-number line below
 - If print fails after save, DB records remain (status becomes `PRINT_FAILED`)
