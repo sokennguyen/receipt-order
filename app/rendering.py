@@ -49,3 +49,16 @@ def format_note_tags(note_ids: list[str]) -> Text:
             text.append(" ")
         text.append(f"[{NOTE_CATALOG[note_id]}]", style="white")
     return text
+
+
+def format_all_note_tags(entry: OrderEntry) -> Text:
+    """Render built-in and custom selected notes as compact tags."""
+    text = Text()
+    labels: list[str] = []
+    labels.extend(NOTE_CATALOG[note_id] for note_id in NOTE_CATALOG if note_id in entry.selected_notes)
+    labels.extend(entry.custom_notes)
+    for idx, label in enumerate(labels):
+        if idx > 0:
+            text.append(" ")
+        text.append(f"[{label}]", style="white")
+    return text

@@ -14,13 +14,13 @@ from textual.events import Key
 from textual.reactive import reactive
 from textual.widgets import Header, Static
 
-from app.data import MENU_BY_MODE, NOTE_CATALOG, SEARCH_ALIASES_BY_DISH, display_name_for_dish
+from app.data import MENU_BY_MODE, SEARCH_ALIASES_BY_DISH, display_name_for_dish
 from app.models import MenuItem, OrderConfirmData, OrderEntry, RegisterGroup, RegisterRow
 from app.notes_modal import NotesModal
 from app.order_number_modal import OrderNumberModal
 from app.persistence import bootstrap_schema, save_order_batch, update_order_status
 from app.printer import check_printer_dependencies, print_order_batch
-from app.rendering import badge_style, format_note_tags, format_order_label
+from app.rendering import badge_style, format_all_note_tags, format_order_label
 
 
 class ReceiptOrderApp(App):
@@ -695,6 +695,7 @@ class ReceiptOrderApp(App):
             name=item.name,
             mode=item.mode,
             selected_notes=set(item.selected_notes),
+            custom_notes=list(item.custom_notes),
             is_takeaway=item.is_takeaway,
         )
         if group_id is not None:
@@ -959,7 +960,12 @@ class ReceiptOrderApp(App):
         if not items:
             return False
         first = items[0]
-        return all(item.dish_id == first.dish_id and item.selected_notes == first.selected_notes for item in items)
+        return all(
+            item.dish_id == first.dish_id
+            and item.selected_notes == first.selected_notes
+            and item.custom_notes == first.custom_notes
+            for item in items
+        )
 
     def _open_notes_for_selected_order(self) -> None:
         entry = self._selected_order()
@@ -986,8 +992,10 @@ class ReceiptOrderApp(App):
         was_bulk_notes = bool(self._bulk_note_targets)
         if self._bulk_note_targets:
             source_notes = set(self._bulk_note_targets[0].selected_notes)
+            source_custom_notes = list(self._bulk_note_targets[0].custom_notes)
             for item in self._bulk_note_targets[1:]:
                 item.selected_notes = set(source_notes)
+                item.custom_notes = list(source_custom_notes)
         self._bulk_note_targets = None
         if was_bulk_notes and self.view_mode_active:
             self._exit_view_mode()
@@ -1173,18 +1181,15 @@ class ReceiptOrderApp(App):
 
         return (start, start + rows)
 
-    def _selected_note_ids(self, item: OrderEntry) -> list[str]:
-        return [note_id for note_id in NOTE_CATALOG if note_id in item.selected_notes]
-
     def _append_item_with_notes(self, lines: Text, item: OrderEntry, prefix: str, note_indent: str) -> None:
         lines.append(prefix)
         if item.is_takeaway:
             lines.append("TAW ", style="bold yellow")
         lines.append_text(format_order_label(item))
-        selected_note_ids = self._selected_note_ids(item)
-        if selected_note_ids:
+        has_notes = bool(item.selected_notes or item.custom_notes)
+        if has_notes:
             lines.append(f"\n{note_indent}")
-            lines.append_text(format_note_tags(selected_note_ids))
+            lines.append_text(format_all_note_tags(item))
 
     def _refresh_orders(self) -> None:
         try:

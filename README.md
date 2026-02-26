@@ -60,6 +60,11 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 
 - `J` / `K` / `↑` / `↓`: move note cursor
 - `Enter`: toggle highlighted note on/off
+- `Other note` row is always at the bottom:
+  - `Enter` on `Other note` starts inline typing (`Other note: ...|`)
+  - while typing: printable keys insert text, `Backspace` deletes, `Enter` confirms, `Esc` cancels typing
+  - confirmed text is added as a selected custom note row above `Other note`
+  - custom rows can be toggled off (removed/discarded)
 - `Esc` / `q` / `Ctrl+C`: close modal
 
 ### Order Number modal
@@ -75,6 +80,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 - Submit (`Ctrl+S`) prompts for order number (0..1000); cancel aborts submit
 - In order-number modal, `Ctrl+N` toggles a runtime `NOT PAID` marker printed in the header (not persisted)
 - Confirmed submit writes `orders` (including `order_number`), `order_items`, and `order_item_notes`
+- Selected custom `Other note` entries are saved in `order_item_notes` using `note_id` like `custom:{index}` and `note_label` text
 - Print format:
   - header behavior:
     - `order_number > 0`: prints right-aligned order number (plus `NOT PAID` if toggled)
@@ -85,6 +91,7 @@ This repository is now initialized with a minimal [Textual](https://textual.text
   - duplicate rows are grouped by mode + dish + exact note set and shown with quantity suffix (example: `R-Classic │3`)
   - duplicate rows with manually grouped members include one compact allocation line (example: `1 2x2`)
   - groups with notes print one indented line per note under the item line
+  - selected custom `Other note` text also prints under item lines
   - spicy note aliases are symbol-only: `☆`, `☆☆`, `♥`, `♥♥`
   - if Side Dish (`S`) groups exist, they print after a full-width separator line
   - side dish labels are printed as plain names (no `S-` prefix)

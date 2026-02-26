@@ -14,7 +14,7 @@ from app.config import (
     PRINTER_USB_VENDOR_ID,
     PRINTER_WIDTH_PX,
 )
-from app.data import NOTE_CATALOG, print_label_override_for_dish, print_note_alias_for_id
+from app.data import NOTE_CATALOG, print_label_override_for_dish, print_note_alias_for_id, print_note_alias_for_text
 from app.models import OrderEntry
 
 # Separator tuning values.
@@ -36,6 +36,8 @@ class _GroupedPrintRow:
     item: OrderEntry
     count: int
     note_key: frozenset[str]
+    custom_note_key: frozenset[str]
+    custom_notes_sorted: tuple[str, ...]
     first_seen_index: int
     group_allocations: dict[int, int] = field(default_factory=dict)
 
@@ -304,13 +306,14 @@ def _category_rank(mode: str | None) -> int:
 
 
 def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
-    """Group by mode+dish+exact note set and then sort for print."""
-    groups: dict[tuple[str | None, str, frozenset[str]], _GroupedPrintRow] = {}
+    """Group by mode+dish+exact built-in/custom note sets and then sort for print."""
+    groups: dict[tuple[str | None, str, frozenset[str], frozenset[str]], _GroupedPrintRow] = {}
 
     for idx, item in enumerate(items):
         source_group_id = getattr(item, "_group_id", None)
         note_key = frozenset(item.selected_notes)
-        key = (item.mode, item.dish_id, note_key)
+        custom_note_key = frozenset(item.custom_notes)
+        key = (item.mode, item.dish_id, note_key, custom_note_key)
         row = groups.get(key)
         if row is not None:
             row.count += 1
@@ -324,6 +327,8 @@ def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
             item=item,
             count=1,
             note_key=note_key,
+            custom_note_key=custom_note_key,
+            custom_notes_sorted=tuple(sorted(custom_note_key)),
             first_seen_index=idx,
             group_allocations=allocations,
         )
@@ -333,8 +338,12 @@ def _group_print_items(items: list[OrderEntry]) -> list[_GroupedPrintRow]:
     return rows
 
 
-def _ordered_note_labels(note_key: frozenset[str]) -> list[str]:
-    return [print_note_alias_for_id(note_id) for note_id in NOTE_CATALOG if note_id in note_key]
+def _ordered_note_labels(note_key: frozenset[str], custom_notes_sorted: tuple[str, ...]) -> list[str]:
+    labels = [print_note_alias_for_id(note_id) for note_id in NOTE_CATALOG if note_id in note_key]
+    labels.extend(
+        aliased for aliased in (print_note_alias_for_text(note_text) for note_text in custom_notes_sorted) if aliased
+    )
+    return labels
 
 
 def _grouped_print_label(item: OrderEntry, count: int) -> str:
@@ -412,7 +421,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
             if allocation:
                 printer.image(_render_compact_line(f"    {allocation}", compact_font))
 
-        for note_label in _ordered_note_labels(row.note_key):
+        for note_label in _ordered_note_labels(row.note_key, row.custom_notes_sorted):
             note_line = _render_line(f"    {note_label}", font)
             printer.image(note_line)
 
@@ -430,7 +439,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
                 bag_lines.append(_BAG_INLINE_SEPARATOR_TOKEN)
                 printed_bag_s_separator = True
             bag_lines.append(_grouped_print_label(row.item, row.count))
-            for note_label in _ordered_note_labels(row.note_key):
+            for note_label in _ordered_note_labels(row.note_key, row.custom_notes_sorted):
                 bag_lines.append(f"    {note_label}")
         printer.image(_render_taw_bag_box(bag_lines, font))
         if group_id is not None:

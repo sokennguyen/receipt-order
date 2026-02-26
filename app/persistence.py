@@ -90,6 +90,8 @@ def save_order_batch(items: Iterable[OrderEntry], order_number: int) -> SavedOrd
             name=item.name,
             mode=item.mode,
             selected_notes=set(item.selected_notes),
+            custom_notes=list(item.custom_notes),
+            is_takeaway=item.is_takeaway,
         )
         for item in items
     ]
@@ -125,6 +127,18 @@ def save_order_batch(items: Iterable[OrderEntry], order_number: int) -> SavedOrd
                         VALUES (?, ?, ?)
                         """,
                         (order_item_id, note_id, NOTE_CATALOG[note_id]),
+                    )
+
+                for idx, note_text in enumerate(item.custom_notes):
+                    normalized = note_text.strip()
+                    if not normalized:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO order_item_notes (order_item_id, note_id, note_label)
+                        VALUES (?, ?, ?)
+                        """,
+                        (order_item_id, f"custom:{idx}", normalized),
                     )
 
     return SavedOrderBatch(order_id=order_id, created_at=created_at, order_number=order_number, items=copied_items)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.models import MenuItem
@@ -176,6 +177,36 @@ def print_note_alias_for_id(note_id: str) -> str:
             return f"{symbol} {item_text}"
 
     return NOTE_CATALOG.get(note_id, note_id.replace("_", " ").title())
+
+
+def print_note_alias_for_text(note_text: str) -> str:
+    """Return compact print alias for free-form note text (case-insensitive)."""
+    raw = note_text.strip()
+    if not raw:
+        return ""
+
+    tokens = [token for token in re.split(r"[^a-z0-9]+", raw.lower()) if token]
+    if not tokens:
+        return raw
+
+    prefix_to_symbol = {
+        "no": "x",
+        "less": "-",
+        "more": "+",
+        "add": "^",
+    }
+    qualifier_tokens = set(prefix_to_symbol)
+
+    first = tokens[0]
+    if first in prefix_to_symbol:
+        symbol = prefix_to_symbol[first]
+        item_tokens = [token for token in tokens if token not in qualifier_tokens]
+        item_text = " ".join(item_tokens).strip()
+        if not item_text:
+            item_text = " ".join(tokens).strip()
+        return f"{symbol} {item_text}"
+
+    return raw.lower()
 
 
 MENU_DISH_IDS_BY_MODE: dict[str, list[str]] = {
