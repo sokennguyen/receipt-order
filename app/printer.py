@@ -24,6 +24,10 @@ _SECTION_SEPARATOR_THICKNESS_PX = 5
 _SECTION_SEPARATOR_STRIPE_HEIGHT_PX = 2
 _SECTION_SEPARATOR_PAUSE_SECONDS = 0.1
 _BAG_INLINE_SEPARATOR_TOKEN = "__BAG_SEP__"
+_BAG_OUTLINE_STROKE_PX = 2
+_BAG_EAR_STROKE_PX = 2
+_MAIN_TO_BAG_GAP_PX = 18
+_BAG_TO_BAG_GAP_PX = 12
 
 
 @dataclass
@@ -153,7 +157,7 @@ def _render_taw_bag_box(lines: list[str], font: object) -> object:
     if not lines:
         lines = [""]
 
-    line_gap_px = 4
+    line_slot_px = PRINTER_FONT_SIZE + 20
     pad_x = 10
     pad_y = 8
     max_inner_width = max(120, PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2) - (pad_x * 2))
@@ -170,13 +174,13 @@ def _render_taw_bag_box(lines: list[str], font: object) -> object:
     line_sizes = []
     for line in safe_lines:
         if line == _BAG_INLINE_SEPARATOR_TOKEN:
-            line_sizes.append((max_inner_width, 2, 0))
+            line_sizes.append((max_inner_width, line_slot_px, 0))
             continue
         bbox = probe_draw.textbbox((0, 0), line, font=font)
-        line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1]))
+        line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1], line_slot_px))
 
-    content_width = max(width for width, _, _ in line_sizes)
-    content_height = sum(height for _, height, _ in line_sizes) + line_gap_px * (len(line_sizes) - 1)
+    content_width = max(width for width, *_ in line_sizes)
+    content_height = line_slot_px * len(line_sizes)
     box_width = min(PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2), content_width + (pad_x * 2))
     x0 = PRINTER_LEFT_INDENT_PX
     x1 = x0 + box_width - 1
@@ -192,18 +196,23 @@ def _render_taw_bag_box(lines: list[str], font: object) -> object:
     img = Image.new("1", (PRINTER_WIDTH_PX, img_h), color=1)
     draw = ImageDraw.Draw(img)
 
-    draw.rectangle((x0, y0, x1, y1), outline=0)
+    draw.rectangle((x0, y0, x1, y1), outline=0, width=_BAG_OUTLINE_STROKE_PX)
     ear_center_x = x0 + (box_width // 2)
-    _draw_bag_ear(draw, ear_center_x, y0, stroke_width=1)
+    _draw_bag_ear(draw, ear_center_x, y0, stroke_width=_BAG_EAR_STROKE_PX)
 
     y = y0 + pad_y
     text_x = x0 + pad_x
-    for line, (_, h, top) in zip(safe_lines, line_sizes):
+    for line, size in zip(safe_lines, line_sizes):
         if line == _BAG_INLINE_SEPARATOR_TOKEN:
-            draw.rectangle((text_x, y, x1 - pad_x, y + h - 1), fill=0)
+            sep_h = 2
+            sep_y = y + (line_slot_px - sep_h) // 2
+            draw.rectangle((text_x, sep_y, x1 - pad_x, sep_y + sep_h - 1), fill=0)
         else:
-            draw.text((text_x, y - top), line, font=font, fill=0)
-        y += h + line_gap_px
+            _, h, top, slot_h = size
+            text_y = y + (slot_h - h) // 2
+            # `top` adjusts for font ascent/descent baseline.
+            draw.text((text_x, text_y - top), line, font=font, fill=0)
+        y += line_slot_px
 
     return img
 
@@ -255,6 +264,34 @@ def _render_order_number_header(order_number: int, font: object) -> object:
     text_y = top_padding - text_bbox[1]
     draw.text((text_x, text_y), text, font=font, fill=0)
     return img
+
+
+def _print_order_header_phase(printer: object, order_number: int, header_font: object) -> None:
+    """Print the order header as an isolated first phase."""
+    printer.image(_render_order_number_header(order_number, header_font))
+
+
+def _begin_body_phase(printer: object) -> None:
+    """
+    Reset printer state between header and body phases.
+
+    Some devices show right-edge raster artifacts when a right-aligned header image
+    is followed immediately by body images. A soft ESC/POS reset boundary helps
+    isolate those two print tasks.
+    """
+    try:
+        raw = getattr(printer, "_raw", None)
+        if callable(raw):
+            raw(b"\x1b@")  # ESC @ initialize/reset
+    except Exception:
+        # Best-effort only: if reset is unsupported, continue with current state.
+        pass
+
+    try:
+        printer.set(align="left")
+    except Exception:
+        # Keep printing even if this adapter doesn't expose set/align.
+        pass
 
 
 def _category_rank(mode: str | None) -> int:
@@ -357,7 +394,8 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
     takeaway_items = [item for item in items if item.is_takeaway]
     grouped_main_rows = _group_print_items(main_items)
     takeaway_buckets = _takeaway_buckets(takeaway_items)
-    printer.image(_render_order_number_header(order_number, header_font))
+    _print_order_header_phase(printer, order_number, header_font)
+    _begin_body_phase(printer)
     printed_main_s_separator = False
 
     for row in grouped_main_rows:
@@ -378,7 +416,12 @@ def print_order_batch(items: list[OrderEntry], order_number: int) -> None:
             note_line = _render_line(f"    {note_label}", font)
             printer.image(note_line)
 
-    for group_id, bucket_items in takeaway_buckets:
+    for bag_idx, (group_id, bucket_items) in enumerate(takeaway_buckets):
+        if bag_idx == 0 and grouped_main_rows:
+            printer.image(_render_spacer(_MAIN_TO_BAG_GAP_PX))
+        elif bag_idx > 0:
+            printer.image(_render_spacer(_BAG_TO_BAG_GAP_PX))
+
         bag_rows = _group_print_items(bucket_items)
         bag_lines: list[str] = []
         printed_bag_s_separator = False
