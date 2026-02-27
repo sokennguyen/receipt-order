@@ -14,8 +14,10 @@ This repository is now initialized with a minimal [Textual](https://textual.text
 3. Run the app:
 
    ```bash
-   receipt-order
+   order
    ```
+
+Compatibility alias: `receipt-order` still works.
 
 ## Project layout
 

@@ -11,6 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
+order = "app.main:main"
 receipt-order = "app.main:main"
 
 [build-system]
