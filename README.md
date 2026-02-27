@@ -85,6 +85,11 @@ Compatibility alias: `receipt-order` still works.
 ## Persistence / print flow
 
 - SQLite file path: `data/receipt.db`
+- Font path resolution for printing:
+  - default keeps macOS behavior: `PRINTER_FONT_PATH` (`/System/Library/Fonts/SFNS.ttf`)
+  - if the default is unavailable (for example on Arch/Linux), app tries common Linux fallbacks
+  - optional override: set `RECEIPT_PRINTER_FONT_PATH` to force a specific font file
+    - example: `RECEIPT_PRINTER_FONT_PATH=/usr/share/fonts/TTF/DejaVuSans.ttf order`
 - Submit (`Ctrl+S`) prompts for order number (0..1000); cancel aborts submit
 - In order-number modal, `Ctrl+N` toggles a runtime `NOT PAID` marker printed in the header (not persisted)
 - Confirmed submit writes `orders` (including `order_number`), `order_items`, and `order_item_notes`

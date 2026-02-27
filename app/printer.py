@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from time import sleep
 
 from app.config import (
@@ -31,6 +33,13 @@ _BAG_TO_BAG_GAP_PX = 12
 _HEADER_RIGHT_GUTTER_PX = 8
 # Extra vertical headroom for full-size lines to avoid descender clipping on thermal output.
 _MAIN_LINE_EXTRA_PX = 30
+_FONT_OVERRIDE_ENV = "RECEIPT_PRINTER_FONT_PATH"
+_LINUX_FONT_FALLBACKS = (
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+)
 
 
 @dataclass
@@ -61,11 +70,43 @@ def to_print_label(item: OrderEntry) -> str:
     return base_name
 
 
+def resolve_printer_font_path() -> str:
+    """
+    Resolve a printer font path with macOS default behavior preserved.
+
+    Resolution order:
+    1. RECEIPT_PRINTER_FONT_PATH (if set)
+    2. PRINTER_FONT_PATH
+    3. Known Linux fallbacks
+    """
+    env_override = os.environ.get(_FONT_OVERRIDE_ENV, "").strip()
+    candidates: list[str] = []
+    if env_override:
+        candidates.append(env_override)
+    candidates.append(PRINTER_FONT_PATH)
+    candidates.extend(_LINUX_FONT_FALLBACKS)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        if Path(candidate).is_file():
+            return candidate
+
+    raise RuntimeError(
+        f"No usable printer font found. Set {_FONT_OVERRIDE_ENV} to a valid .ttf/.otf file. "
+        f"Tried: {', '.join(seen)}"
+    )
+
+
 def check_printer_dependencies() -> tuple[bool, str]:
     """Check whether printer dependencies are importable."""
     try:
         from escpos.printer import Usb  # noqa: F401
-        from PIL import ImageFont  # noqa: F401
+        from PIL import ImageFont
+        font_path = resolve_printer_font_path()
+        ImageFont.truetype(font_path, max(10, PRINTER_FONT_SIZE // 2))
     except Exception as exc:
         return (False, f"Printer deps unavailable: {exc}")
     return (True, "Printer ready")
@@ -396,13 +437,14 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
         raise RuntimeError(f"Printer dependencies unavailable: {exc}") from exc
 
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
-    font = ImageFont.truetype(PRINTER_FONT_PATH, PRINTER_FONT_SIZE)
+    font_path = resolve_printer_font_path()
+    font = ImageFont.truetype(font_path, PRINTER_FONT_SIZE)
     # Group-allocation line should be much smaller than item lines.
     # Set it to half of the current compact size.
     compact_base_size = max(14, PRINTER_FONT_SIZE - 16)
     compact_font_size = max(10, int(round(compact_base_size * (1 / 3))))
-    compact_font = ImageFont.truetype(PRINTER_FONT_PATH, compact_font_size)
-    header_font = ImageFont.truetype(PRINTER_FONT_PATH, max(20, PRINTER_FONT_SIZE - 20))
+    compact_font = ImageFont.truetype(font_path, compact_font_size)
+    header_font = ImageFont.truetype(font_path, max(20, PRINTER_FONT_SIZE - 20))
     main_items = [item for item in items if not item.is_takeaway]
     takeaway_items = [item for item in items if item.is_takeaway]
     grouped_main_rows = _group_print_items(main_items)
