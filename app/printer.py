@@ -33,6 +33,7 @@ _BAG_TO_BAG_GAP_PX = 12
 _HEADER_RIGHT_GUTTER_PX = 8
 # Extra vertical headroom for full-size lines to avoid descender clipping on thermal output.
 _MAIN_LINE_EXTRA_PX = 30
+_NOTE_LINE_EXTRA_PX = 10
 _FONT_OVERRIDE_ENV = "RECEIPT_PRINTER_FONT_PATH"
 _LINUX_FONT_FALLBACKS = (
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -113,15 +114,25 @@ def check_printer_dependencies() -> tuple[bool, str]:
 
 
 def _render_line(text: str, font: object) -> object:
+    return _render_line_with_extra(text, font, _MAIN_LINE_EXTRA_PX, min_height=PRINTER_FONT_SIZE + _MAIN_LINE_EXTRA_PX)
+
+
+def _render_note_line(text: str, font: object) -> object:
+    # Notes use smaller text and tighter vertical spacing for denser tickets.
+    return _render_line_with_extra(text, font, _NOTE_LINE_EXTRA_PX, min_height=12)
+
+
+def _render_line_with_extra(text: str, font: object, extra_px: int, min_height: int) -> object:
     from PIL import Image, ImageDraw
 
-    canvas_height = PRINTER_FONT_SIZE + _MAIN_LINE_EXTRA_PX
+    probe = Image.new("1", (1, 1), color=1)
+    probe_draw = ImageDraw.Draw(probe)
+    bbox = probe_draw.textbbox((0, 0), text, font=font)
+    text_height = bbox[3] - bbox[1]
+    canvas_height = max(min_height, text_height + max(0, extra_px))
+
     img = Image.new("1", (PRINTER_WIDTH_PX, canvas_height), color=1)
     draw = ImageDraw.Draw(img)
-
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_height = bbox[3] - bbox[1]
-
     x = PRINTER_LEFT_INDENT_PX
     # Offset by bbox top so descenders (g, y, p, etc.) are not clipped.
     y = (canvas_height - text_height) // 2 - bbox[1]
@@ -169,6 +180,10 @@ def _fit_text_to_px(text: str, font: object, max_width_px: int) -> str:
     return ellipsis
 
 
+def _is_spicy_symbol_alias(note_label: str) -> bool:
+    return note_label in {"☆", "☆☆", "♥", "♥♥"}
+
+
 def _draw_bag_ear(draw: object, center_x: int, baseline_y: int, stroke_width: int = 1) -> int:
     """Draw a two-loop bag handle ear and return its height in pixels."""
     loop_width = 24
@@ -198,36 +213,52 @@ def _draw_bag_ear(draw: object, center_x: int, baseline_y: int, stroke_width: in
     return loop_height
 
 
-def _render_taw_bag_box(lines: list[str], font: object) -> object:
+def _render_taw_bag_box(lines: list[str], item_font: object, note_font: object) -> object:
     from PIL import Image, ImageDraw
 
     if not lines:
         lines = [""]
 
-    line_slot_px = PRINTER_FONT_SIZE + 20
+    item_line_slot_px = PRINTER_FONT_SIZE + 20
+    note_line_slot_px = max(12, int(round(item_line_slot_px * 0.75)))
     pad_x = 10
     pad_y = 8
     max_inner_width = max(120, PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2) - (pad_x * 2))
 
-    safe_lines = []
+    safe_lines: list[str] = []
+    line_fonts: list[object | None] = []
+    line_slots: list[int] = []
     for line in lines:
         if line == _BAG_INLINE_SEPARATOR_TOKEN:
             safe_lines.append(line)
+            line_fonts.append(None)
+            line_slots.append(item_line_slot_px)
             continue
-        safe_lines.append(_fit_text_to_px(line, font, max_inner_width))
+        if line.startswith("    "):
+            note_label = line.strip()
+            line_font = item_font if _is_spicy_symbol_alias(note_label) else note_font
+            line_slot_px = item_line_slot_px if _is_spicy_symbol_alias(note_label) else note_line_slot_px
+        else:
+            line_font = item_font
+            line_slot_px = item_line_slot_px
+        safe_lines.append(_fit_text_to_px(line, line_font, max_inner_width))
+        line_fonts.append(line_font)
+        line_slots.append(line_slot_px)
 
     probe = Image.new("1", (1, 1), color=1)
     probe_draw = ImageDraw.Draw(probe)
-    line_sizes = []
-    for line in safe_lines:
+    line_sizes: list[tuple[int, int, int, int]] = []
+    for idx, (line, line_font) in enumerate(zip(safe_lines, line_fonts)):
+        slot_h = line_slots[idx]
         if line == _BAG_INLINE_SEPARATOR_TOKEN:
-            line_sizes.append((max_inner_width, line_slot_px, 0))
+            line_sizes.append((max_inner_width, slot_h, 0, slot_h))
             continue
-        bbox = probe_draw.textbbox((0, 0), line, font=font)
-        line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1], line_slot_px))
+        assert line_font is not None
+        bbox = probe_draw.textbbox((0, 0), line, font=line_font)
+        line_sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[1], slot_h))
 
     content_width = max(width for width, *_ in line_sizes)
-    content_height = line_slot_px * len(line_sizes)
+    content_height = sum(slot_h for _, _, _, slot_h in line_sizes)
     box_width = min(PRINTER_WIDTH_PX - (PRINTER_LEFT_INDENT_PX * 2), content_width + (pad_x * 2))
     x0 = PRINTER_LEFT_INDENT_PX
     x1 = x0 + box_width - 1
@@ -249,17 +280,19 @@ def _render_taw_bag_box(lines: list[str], font: object) -> object:
 
     y = y0 + pad_y
     text_x = x0 + pad_x
-    for line, size in zip(safe_lines, line_sizes):
+    for line, size, line_font in zip(safe_lines, line_sizes, line_fonts):
         if line == _BAG_INLINE_SEPARATOR_TOKEN:
             sep_h = 2
-            sep_y = y + (line_slot_px - sep_h) // 2
+            slot_h = size[3]
+            sep_y = y + (slot_h - sep_h) // 2
             draw.rectangle((text_x, sep_y, x1 - pad_x, sep_y + sep_h - 1), fill=0)
         else:
             _, h, top, slot_h = size
             text_y = y + (slot_h - h) // 2
             # `top` adjusts for font ascent/descent baseline.
-            draw.text((text_x, text_y - top), line, font=font, fill=0)
-        y += line_slot_px
+            assert line_font is not None
+            draw.text((text_x, text_y - top), line, font=line_font, fill=0)
+        y += slot_h
 
     return img
 
@@ -439,6 +472,8 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
     printer = Usb(PRINTER_USB_VENDOR_ID, PRINTER_USB_PRODUCT_ID)
     font_path = resolve_printer_font_path()
     font = ImageFont.truetype(font_path, PRINTER_FONT_SIZE)
+    note_font_size = max(10, int(round(PRINTER_FONT_SIZE * 0.75)))
+    note_font = ImageFont.truetype(font_path, note_font_size)
     # Group-allocation line should be much smaller than item lines.
     # Set it to half of the current compact size.
     compact_base_size = max(14, PRINTER_FONT_SIZE - 16)
@@ -469,7 +504,8 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
                 printer.image(_render_compact_line(f"    {allocation}", compact_font))
 
         for note_label in _ordered_note_labels(row.note_key, row.custom_notes_sorted):
-            note_line = _render_line(f"    {note_label}", font)
+            note_line_font = font if _is_spicy_symbol_alias(note_label) else note_font
+            note_line = _render_note_line(f"    {note_label}", note_line_font)
             printer.image(note_line)
 
     for bag_idx, (group_id, bucket_items) in enumerate(takeaway_buckets):
@@ -488,7 +524,7 @@ def print_order_batch(items: list[OrderEntry], order_number: int, not_paid: bool
             bag_lines.append(_grouped_print_label(row.item, row.count))
             for note_label in _ordered_note_labels(row.note_key, row.custom_notes_sorted):
                 bag_lines.append(f"    {note_label}")
-        printer.image(_render_taw_bag_box(bag_lines, font))
+        printer.image(_render_taw_bag_box(bag_lines, font, note_font))
         if group_id is not None:
             printer.image(_render_compact_line(str(group_id), compact_font))
 

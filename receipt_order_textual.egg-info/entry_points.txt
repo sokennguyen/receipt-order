@@ -1,2 +1,3 @@
 [console_scripts]
+order = app.main:main
 receipt-order = app.main:main
