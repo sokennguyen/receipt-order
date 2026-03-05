@@ -1,3 +1,1 @@
-- separate menu from data.py to a constant, editable file.
-- go through all the menu, figure out what items are missing, what are the aliases, what are default notes and unique notes for each items, and what to print.
-
+- adding notes on two different items are not possible right not. Expected behaviour for batch noting two different items that are in the same group is to show the combined list of available notes for the two of them on the modal, then list the repeated items only once.
